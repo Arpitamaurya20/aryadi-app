@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +16,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AuthUser } from '../api/auth';
+import {
+  formatJoiningDate,
+  isBeforeJoiningDate,
+  normalizeRegularizationTime,
+  requestAttendanceRegularization,
+} from '../api/attendance';
 import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
 
@@ -26,6 +32,7 @@ const PageBg = '#EAF5FC';
 const Mute = '#7A8CA5';
 const SoftBlue = '#E8F4FD';
 const FieldStroke = '#D5E4F2';
+const SickRed = '#E11D48';
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -37,31 +44,66 @@ type WorkFromHomeScreenProps = {
 export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
   const today = useMemo(() => new Date(), []);
   const dateLabel = formatDate(today);
+  const joiningLabel = formatJoiningDate(user.joiningDate) || 'Not set';
+  const beforeJoining = isBeforeJoiningDate(user.joiningDate, today);
+
   const [inTime, setInTime] = useState('09:00');
   const [outTime, setOutTime] = useState('18:00');
   const [reason, setReason] = useState('');
   const [reasonFocused, setReasonFocused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (submitting) return true;
       onBack();
       return true;
     });
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, submitting]);
 
-  function submit() {
-    if (!inTime.trim() || !outTime.trim()) {
-      Alert.alert('Please enter in time and out time.');
+  async function submit() {
+    if (submitting) return;
+    setFormError('');
+    setFormSuccess('');
+
+    if (beforeJoining) {
+      setFormError(`WFH is not allowed before joining date (${joiningLabel}).`);
+      return;
+    }
+    if (!normalizeRegularizationTime(inTime) || !normalizeRegularizationTime(outTime)) {
+      setFormError('Please enter in/out time as HH:MM.');
       return;
     }
     if (!reason.trim()) {
-      Alert.alert('Please enter a reason for WFH.');
+      setFormError('Please enter a reason for WFH.');
       return;
     }
-    Alert.alert('WFH request submitted', `${dateLabel} · ${inTime} - ${outTime}`, [
-      { text: 'OK', onPress: onBack },
-    ]);
+
+    setSubmitting(true);
+    try {
+      const result = await requestAttendanceRegularization({
+        employeeId: user.employeeId,
+        type: 'WFH',
+        reason: reason.trim(),
+        entries: [
+          {
+            recordDate: toIsoDate(today),
+            inTime,
+            outTime,
+            reason: reason.trim(),
+          },
+        ],
+      });
+      setFormSuccess(result.message);
+      setReason('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to submit WFH request.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -70,7 +112,14 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
       <LinearGradient colors={[LogoNavy, LogoMid, LogoSky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         <SafeAreaView edges={['top']}>
           <View style={styles.header}>
-            <Pressable onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
+            <Pressable
+              onPress={() => {
+                if (!submitting) onBack();
+              }}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
               <MaterialCommunityIcons name="arrow-left" size={22} color={Brand.white} />
             </Pressable>
             <Text style={styles.headerTitle}>Work From Home</Text>
@@ -114,7 +163,7 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
                       {user.username}
                     </Text>
                     <Text style={styles.userMeta} numberOfLines={1}>
-                      Joining · 15 Jun 2026
+                      Joining · {joiningLabel}
                     </Text>
                   </View>
                 </View>
@@ -139,10 +188,15 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
                     <MaterialCommunityIcons name="clock-outline" size={18} color={LogoMid} />
                     <TextInput
                       value={inTime}
-                      onChangeText={setInTime}
+                      onChangeText={(value) => {
+                        setInTime(value);
+                        setFormError('');
+                        setFormSuccess('');
+                      }}
                       placeholder="09:00"
                       placeholderTextColor={Mute}
                       style={[styles.input, webInputReset]}
+                      editable={!submitting}
                     />
                   </View>
                 </View>
@@ -152,10 +206,15 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
                     <MaterialCommunityIcons name="clock-outline" size={18} color={LogoMid} />
                     <TextInput
                       value={outTime}
-                      onChangeText={setOutTime}
+                      onChangeText={(value) => {
+                        setOutTime(value);
+                        setFormError('');
+                        setFormSuccess('');
+                      }}
                       placeholder="18:00"
                       placeholderTextColor={Mute}
                       style={[styles.input, webInputReset]}
+                      editable={!submitting}
                     />
                   </View>
                 </View>
@@ -167,23 +226,42 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
                   <MaterialCommunityIcons name="text-box-outline" size={18} color={LogoMid} style={styles.reasonIcon} />
                   <TextInput
                     value={reason}
-                    onChangeText={setReason}
+                    onChangeText={(value) => {
+                      setReason(value);
+                      setFormError('');
+                      setFormSuccess('');
+                    }}
                     placeholder="Reason for WFH today..."
                     placeholderTextColor={Mute}
                     style={[styles.input, styles.reasonInput, webInputReset]}
                     multiline
                     textAlignVertical="top"
+                    editable={!submitting}
                     onFocus={() => setReasonFocused(true)}
                     onBlur={() => setReasonFocused(false)}
                   />
                 </View>
               </View>
+
+              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+              {formSuccess ? <Text style={styles.formSuccess}>{formSuccess}</Text> : null}
             </ScrollView>
 
             <View style={styles.footer}>
-              <Pressable onPress={submit} accessibilityRole="button" accessibilityLabel="Submit WFH request">
+              <Pressable
+                onPress={() => {
+                  void submit();
+                }}
+                disabled={submitting || beforeJoining}
+                accessibilityRole="button"
+                accessibilityLabel="Submit WFH request"
+              >
                 <LinearGradient colors={[LogoNavy, LogoMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submit}>
-                  <Text style={styles.submitText}>SUBMIT REQUEST</Text>
+                  {submitting ? (
+                    <ActivityIndicator color={Brand.white} />
+                  ) : (
+                    <Text style={styles.submitText}>SUBMIT REQUEST</Text>
+                  )}
                 </LinearGradient>
               </Pressable>
             </View>
@@ -196,6 +274,13 @@ export function WorkFromHomeScreen({ user, onBack }: WorkFromHomeScreenProps) {
 
 function formatDate(date: Date) {
   return `${date.getDate()} ${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function toIsoDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 const webInputReset =
@@ -362,6 +447,20 @@ const styles = StyleSheet.create({
   reasonInput: {
     alignSelf: 'stretch',
     height: '100%',
+  },
+  formError: {
+    marginBottom: 8,
+    color: SickRed,
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Poppins_500Medium',
+  },
+  formSuccess: {
+    marginBottom: 8,
+    color: '#15803D',
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Poppins_500Medium',
   },
   footer: {
     borderTopWidth: 1,

@@ -2,7 +2,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchAttendanceStatus, type AttendanceStatus } from '../api/attendance';
 import type { AuthUser } from '../api/auth';
@@ -15,7 +15,8 @@ const LogoMid = '#1E8BE0';
 const LogoSky = '#3AABF2';
 const PageBg = '#EAF5FC';
 const PunchInWash = '#D7EEFB';
-const PunchOutWash = '#F3F7FB';
+const PunchOutWash = '#D7EEFB';
+const ChipIdle = '#F3F7FB';
 const TileBorder = '#D7EEFB';
 const Mute = '#7A8CA5';
 const SoftBlue = '#E8F4FD';
@@ -49,6 +50,8 @@ type WorkZoneScreenProps = {
   onOpenHrHelpdesk: () => void;
   onOpenWfh: () => void;
   onOpenRegularization: () => void;
+  onOpenEmployeeKpi: () => void;
+  onOpenHistory: () => void;
 };
 
 export function WorkZoneScreen({
@@ -61,6 +64,8 @@ export function WorkZoneScreen({
   onOpenHrHelpdesk,
   onOpenWfh,
   onOpenRegularization,
+  onOpenEmployeeKpi,
+  onOpenHistory,
 }: WorkZoneScreenProps) {
   const firstName = user.username.trim().split(' ')[0] || 'there';
   const [showChooseOption, setShowChooseOption] = useState(false);
@@ -103,6 +108,19 @@ export function WorkZoneScreen({
     attendance?.inTimeStatus && attendance.inTime ? attendance.inTime : '--:--';
   const punchOutTime =
     attendance?.outTimeStatus && attendance.outTime ? attendance.outTime : '--:--';
+  const punchedIn = punchInTime !== '--:--';
+  const punchedOut = punchOutTime !== '--:--';
+
+  const openHandlers: Partial<Record<WorkKind, () => void>> = {
+    profile: onOpenProfile,
+    leave: onOpenLeave,
+    attendance: onOpenAttendance,
+    convenience: onOpenConvenience,
+    helpdesk: onOpenHrHelpdesk,
+    kpi: onOpenEmployeeKpi,
+    history: onOpenHistory,
+    regularization: () => setShowChooseOption(true),
+  };
 
   return (
     <View style={styles.screen}>
@@ -152,16 +170,18 @@ export function WorkZoneScreen({
                   icon="login"
                   label="Punch In"
                   value={punchInTime}
-                  background={PunchInWash}
+                  background={punchedIn ? PunchInWash : ChipIdle}
                   iconTint={LogoMid}
+                  active={punchedIn}
                   onPress={onOpenAttendance}
                 />
                 <ShiftChip
                   icon="logout"
                   label="Punch Out"
                   value={punchOutTime}
-                  background={PunchOutWash}
-                  iconTint={LogoNavy}
+                  background={punchedOut ? PunchOutWash : ChipIdle}
+                  iconTint={LogoMid}
+                  active={punchedOut}
                   onPress={onOpenAttendance}
                 />
               </>
@@ -184,19 +204,9 @@ export function WorkZoneScreen({
                   item={item}
                   delay={(row * 2 + col) * 90}
                   onPress={
-                    item.kind === 'profile'
-                      ? onOpenProfile
-                      : item.kind === 'leave'
-                        ? onOpenLeave
-                        : item.kind === 'attendance'
-                          ? onOpenAttendance
-                          : item.kind === 'convenience'
-                            ? onOpenConvenience
-                            : item.kind === 'helpdesk'
-                              ? onOpenHrHelpdesk
-                              : item.kind === 'regularization'
-                                ? () => setShowChooseOption(true)
-                                : undefined
+                    item.kind === 'kpi'
+                      ? onOpenEmployeeKpi
+                      : openHandlers[item.kind]
                   }
                 />
               ))}
@@ -297,6 +307,7 @@ function ShiftChip({
   value,
   background,
   iconTint,
+  active,
   onPress,
 }: {
   icon: keyof typeof MaterialIcons.glyphMap;
@@ -304,6 +315,7 @@ function ShiftChip({
   value: string;
   background: string;
   iconTint: string;
+  active?: boolean;
   onPress?: () => void;
 }) {
   return (
@@ -311,7 +323,12 @@ function ShiftChip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${label} ${value}`}
-      style={[styles.chip, { backgroundColor: background }]}
+      style={({ pressed }) => [
+        styles.chip,
+        { backgroundColor: background },
+        active ? styles.chipActive : null,
+        pressed ? styles.chipPressed : null,
+      ]}
     >
       <View style={[styles.chipIcon, { borderColor: `${iconTint}29` }]}>
         <MaterialIcons name={icon} size={18} color={iconTint} />
@@ -334,8 +351,13 @@ function WorkTile({
   onPress?: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => {
+        if (onPress) {
+          onPress();
+        }
+      }}
       accessibilityRole="button"
       accessibilityLabel={`${item.title} ${item.subtitle}`}
       style={[
@@ -349,7 +371,7 @@ function WorkTile({
         }),
       ]}
     >
-      <View style={styles.tileIcon}>
+      <View style={styles.tileIcon} pointerEvents="none">
         <AnimatedWorkIcon kind={item.kind} delay={delay} />
       </View>
       <Text style={[styles.tileTitle, webTitle]} numberOfLines={1}>
@@ -358,7 +380,7 @@ function WorkTile({
       <Text style={[styles.tileSubtitle, webTitle]} numberOfLines={1}>
         {item.subtitle}
       </Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -446,6 +468,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  chipActive: {
+    borderColor: '#B7DCF7',
+  },
+  chipPressed: {
+    opacity: 0.88,
+    backgroundColor: PunchInWash,
   },
   chipIcon: {
     width: 36,
@@ -514,6 +545,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tilePressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  tileDisabled: {
+    opacity: 0.72,
   },
   tileIcon: {
     width: 36,

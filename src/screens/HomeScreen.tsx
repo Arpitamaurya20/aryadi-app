@@ -1,15 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, Image, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { fetchAttendanceStatus, type AttendanceStatus } from '../api/attendance';
 import type { AuthUser } from '../api/auth';
-import { AryadiLogo } from '../components/AryadiLogo';
 import { IndustrialIconBadge, type IndustrialModule } from '../components/IndustrialIcons';
+import { useHomeData, type NoticeAction, type TaskKind } from '../hooks/useHomeData';
 import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
+import { MyTasksTab } from './home/MyTasksTab';
+import { NotificationsTab } from './home/NotificationsTab';
+import { SettingsTab } from './home/SettingsTab';
 
 const PageBg = '#F4F7FB';
 const HeroStart = '#0A4F9C';
@@ -37,9 +40,19 @@ const tabs = [
   { label: 'Settings', icon: 'settings' as const, iconOutline: 'settings-outline' as const },
 ];
 
+const DashboardTab = 0;
+const TasksTab = 1;
+const NotificationsTabIndex = 2;
+const SettingsTabIndex = 3;
+
+/** Home unmounts while another module is open; this brings the user back to the tab they left. */
+let lastSelectedTab = DashboardTab;
+
 type HomeScreenProps = {
   user: AuthUser;
   onLogout: () => void;
+  onOpenProfile: () => void;
+  onEditProfile: () => void;
   onOpenTickets: () => void;
   onOpenSiteVisits: () => void;
   onOpenMappedAssets: () => void;
@@ -51,6 +64,8 @@ type HomeScreenProps = {
 export function HomeScreen({
   user,
   onLogout,
+  onOpenProfile,
+  onEditProfile,
   onOpenTickets,
   onOpenSiteVisits,
   onOpenMappedAssets,
@@ -58,8 +73,34 @@ export function HomeScreen({
   onOpenSpeakUp,
   onOpenVendors,
 }: HomeScreenProps) {
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [selectedTab, setSelectedTabState] = useState(lastSelectedTab);
   const [attendance, setAttendance] = useState<AttendanceStatus | null>(null);
+  const homeData = useHomeData(user, attendance);
+
+  const setSelectedTab = useCallback((index: number) => {
+    lastSelectedTab = index;
+    setSelectedTabState(index);
+  }, []);
+
+  useEffect(() => {
+    if (selectedTab === DashboardTab) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelectedTab(DashboardTab);
+      return true;
+    });
+    return () => sub.remove();
+  }, [selectedTab, setSelectedTab]);
+
+  const openTask = (kind: TaskKind) => (kind === 'visit' ? onOpenSiteVisits() : onOpenTickets());
+  const openNotice = (action: NoticeAction) => {
+    if (action === 'visits') onOpenSiteVisits();
+    else if (action === 'workZone') onOpenWorkZone();
+    else onOpenTickets();
+  };
+  const signOut = () => {
+    lastSelectedTab = DashboardTab;
+    onLogout();
+  };
   const displayName = user.username || 'Technician';
   const role = user.user_type || user.accountType || 'Employee';
   const employeeLabel = user.employee_code
@@ -94,25 +135,31 @@ export function HomeScreen({
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.topSafe}>
-        <View style={styles.topBar}>
-          <Pressable hitSlop={10} accessibilityRole="button" accessibilityLabel="Menu">
-            <Ionicons name="menu" size={22} color={Brand.navy} />
-          </Pressable>
-          <View style={styles.topLogo}>
-            <AryadiLogo width={104} height={32} />
-          </View>
-          <Pressable
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-            style={styles.bellBtn}
-          >
-            <Ionicons name="notifications-outline" size={22} color={Brand.navy} />
-            <View style={styles.bellDot} />
-          </Pressable>
+        <View style={styles.topBar} accessibilityRole="header" accessibilityLabel="Aryadi Business Pvt. Ltd.">
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.logoFull}
+            resizeMode="contain"
+            accessibilityLabel="Aryadi Business Pvt. Ltd. logo"
+          />
         </View>
       </SafeAreaView>
 
+      {selectedTab === TasksTab ? (
+        <MyTasksTab data={homeData} onOpen={openTask} />
+      ) : selectedTab === NotificationsTabIndex ? (
+        <NotificationsTab data={homeData} onAction={openNotice} onOpenSettings={() => setSelectedTab(SettingsTabIndex)} />
+      ) : selectedTab === SettingsTabIndex ? (
+        <SettingsTab
+          user={user}
+          data={homeData}
+          onOpenProfile={onOpenProfile}
+          onEditProfile={onEditProfile}
+          onOpenWorkZone={onOpenWorkZone}
+          onOpenSpeakUp={onOpenSpeakUp}
+          onLogout={signOut}
+        />
+      ) : (
       <View style={styles.body}>
         <View
           style={[
@@ -209,7 +256,7 @@ export function HomeScreen({
 
         <View style={styles.fabRow}>
           <Pressable
-            onPress={onLogout}
+            onPress={signOut}
             accessibilityRole="button"
             accessibilityLabel="Sign out"
             style={[
@@ -229,6 +276,7 @@ export function HomeScreen({
           </Pressable>
         </View>
       </View>
+      )}
 
       <SafeAreaView edges={['bottom']} style={styles.bottomSafe}>
         <View style={styles.bottomBar}>
@@ -242,11 +290,22 @@ export function HomeScreen({
                 accessibilityRole="button"
                 accessibilityLabel={tab.label}
               >
-                <Ionicons
-                  name={active ? tab.icon : tab.iconOutline}
-                  size={22}
-                  color={active ? ActiveBlue : Brand.placeholder}
-                />
+                <View>
+                  <Ionicons
+                    name={active ? tab.icon : tab.iconOutline}
+                    size={22}
+                    color={active ? ActiveBlue : Brand.placeholder}
+                  />
+                  {index === NotificationsTabIndex && homeData.unreadCount > 0 ? (
+                    <View style={styles.tabBadge}>
+                      <Text style={styles.tabBadgeText}>{homeData.unreadCount > 99 ? '99+' : homeData.unreadCount}</Text>
+                    </View>
+                  ) : index === TasksTab && homeData.tasks.length > 0 ? (
+                    <View style={[styles.tabBadge, styles.tabBadgeNeutral]}>
+                      <Text style={styles.tabBadgeText}>{homeData.tasks.length > 99 ? '99+' : homeData.tasks.length}</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={[styles.tabLabel, active ? styles.tabLabelActive : null]}>{tab.label}</Text>
               </Pressable>
             );
@@ -364,29 +423,14 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.white,
   },
   topBar: {
-    height: 56,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  topLogo: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  bellBtn: {
-    width: 22,
-    height: 22,
+    height: 104,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bellDot: {
-    position: 'absolute',
-    top: -1,
-    right: -1,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: PunchOutRed,
+  logoFull: {
+    width: 100,
+    height: 88.75,
   },
   body: {
     flex: 1,
@@ -600,5 +644,28 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     color: Brand.navy,
     fontFamily: 'Poppins_600SemiBold',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -11,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: PunchOutRed,
+    borderWidth: 2,
+    borderColor: Brand.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadgeNeutral: {
+    backgroundColor: LogoMid,
+  },
+  tabBadgeText: {
+    color: Brand.white,
+    fontSize: 9,
+    lineHeight: 11,
+    fontFamily: 'Poppins_700Bold',
   },
 });

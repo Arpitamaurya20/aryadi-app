@@ -1,4 +1,5 @@
-import { apiRequest } from './client';
+import { apiRequest, getAuthToken } from './client';
+import { getApiBaseUrl } from './config';
 import { emptyAuthExtras, type AuthUser } from './auth';
 import { normalizeJoiningDate } from './attendance';
 
@@ -258,4 +259,38 @@ export async function updateEmployeeProfile(
       aadhaar: aadhaar || user.aadhaar,
     };
   }
+}
+
+type ProfileImageResponse = {
+  error?: boolean | number | string;
+  message?: string;
+  ProfileImage?: string;
+};
+
+/** Public URL for a file stored by update_employee_profile_image.php. */
+export function profileMediaUrl(fileName: string) {
+  const root = getApiBaseUrl().replace(/\/api\/?$/, '');
+  return `${root}/admin/employees/media/${encodeURIComponent(fileName)}`;
+}
+
+/** POST update_employee_profile_image.php with raw JPEG base64 (no data: prefix). */
+export async function updateEmployeeProfileImage(employeeId: number, imageData: string) {
+  if (!getAuthToken()) {
+    throw new Error('Sign in again, then update your profile photo.');
+  }
+
+  const payload = await apiRequest<ProfileImageResponse>('update_employee_profile_image.php', {
+    method: 'POST',
+    auth: true,
+    body: {
+      EmployeeID: String(employeeId),
+      imageData,
+    },
+  });
+
+  if (isApiError(payload.error)) {
+    throw new Error(payload.message || 'Unable to update profile photo.');
+  }
+
+  return payload;
 }

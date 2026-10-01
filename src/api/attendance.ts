@@ -323,6 +323,239 @@ export async function punchOut(input: PunchPayload) {
   return payload.message || 'Attendance punched out';
 }
 
+export type AttendanceRequestType = 'Regularization' | 'WFH';
+
+export type RegularizationEntryInput = {
+  recordDate: string;
+  inTime: string;
+  outTime: string;
+  reason?: string;
+};
+
+export type RequestAttendanceRegularizationInput = {
+  employeeId: number;
+  entries: RegularizationEntryInput[];
+  /** Shared reason when submitting a batch; falls back to per-entry reasons. */
+  reason?: string;
+  type?: AttendanceRequestType;
+};
+
+type RegularizationApi = {
+  error?: boolean | number | string;
+  message?: string;
+  attendance_ids?: Array<number | string>;
+  saved_count?: number;
+  failed_count?: number;
+  errors?: string[];
+};
+
+/** Normalize `9:00` / `09:00` / `09:00:00` → `HH:MM:SS` for the API. */
+export function normalizeRegularizationTime(value: string): string | null {
+  const trimmed = value.trim();
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? 0);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+}
+
+/**
+ * Submit attendance regularization or WFH.
+ * POST employeenewapi/request_attendance_regularization.php
+ *
+ * Single:
+ * { EmployeeID, type: "Regularization"|"WFH", reason, record_date, in_time, out_time }
+ *
+ * Batch:
+ * { EmployeeID, type, reason, entries: [{ record_date, in_time, out_time }] }
+ */
+export async function requestAttendanceRegularization(
+  input: RequestAttendanceRegularizationInput,
+): Promise<{ message: string; savedCount: number; attendanceIds: number[] }> {
+  if (!input.employeeId || input.employeeId <= 0) {
+    throw new Error('Missing employee id.');
+  }
+  if (!input.entries.length) {
+    throw new Error('At least one attendance entry is required.');
+  }
+
+  const requestType: AttendanceRequestType = input.type === 'WFH' ? 'WFH' : 'Regularization';
+  const label = requestType === 'WFH' ? 'WFH' : 'attendance regularization';
+
+  const normalizedEntries = input.entries.map((entry, index) => {
+    const recordDate = entry.recordDate.trim();
+    const inTime = normalizeRegularizationTime(entry.inTime);
+    const outTime = normalizeRegularizationTime(entry.outTime);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
+      throw new Error(`Entry #${index + 1}: invalid date.`);
+    }
+    if (!inTime) {
+      throw new Error(`Entry #${index + 1}: enter in time as HH:MM.`);
+    }
+    if (!outTime) {
+      throw new Error(`Entry #${index + 1}: enter out time as HH:MM.`);
+    }
+    return {
+      record_date: recordDate,
+      in_time: inTime,
+      out_time: outTime,
+      reason: (entry.reason || '').trim(),
+    };
+  });
+
+  const reason =
+    (input.reason || '').trim() ||
+    normalizedEntries
+      .map((entry) => entry.reason)
+      .filter(Boolean)
+      .join(' | ') ||
+    '';
+
+  if (!reason) {
+    throw new Error('Please enter a reason.');
+  }
+
+  const body: Record<string, unknown> = {
+    EmployeeID: input.employeeId,
+    type: requestType,
+    reason,
+  };
+
+  if (normalizedEntries.length === 1) {
+    body.record_date = normalizedEntries[0].record_date;
+    body.in_time = normalizedEntries[0].in_time;
+    body.out_time = normalizedEntries[0].out_time;
+  } else {
+    body.entries = normalizedEntries.map(({ record_date, in_time, out_time }) => ({
+      record_date,
+      in_time,
+      out_time,
+    }));
+  }
+
+  const payload = await apiRequest<RegularizationApi>(
+    'employeenewapi/request_attendance_regularization.php',
+    {
+      method: 'POST',
+      auth: true,
+      body,
+    },
+  );
+
+  if (isApiError(payload.error)) {
+    const detail =
+      Array.isArray(payload.errors) && payload.errors.length > 0
+        ? ` ${payload.errors.join(' ')}`
+        : '';
+    throw new Error((payload.message || `Unable to submit ${label}.`) + detail);
+  }
+
+  return {
+    message:
+      payload.message ||
+      (requestType === 'WFH'
+        ? 'WFH request submitted successfully.'
+        : 'Attendance regularization submitted successfully.'),
+    savedCount: Number(payload.saved_count ?? payload.attendance_ids?.length ?? normalizedEntries.length),
+    attendanceIds: Array.isArray(payload.attendance_ids)
+      ? payload.attendance_ids.map((id) => Number(id)).filter((id) => id > 0)
+      : [],
+  };
+}
+
+export type AttendanceHistoryStatus = 'approved' | 'pending' | 'rejected';
+
+export type AttendanceHistoryRecord = {
+  day: number;
+  status: AttendanceHistoryStatus;
+  dayStatus: 'present' | 'pending' | 'rejected';
+  inTime: string;
+  outTime: string | null;
+  duration: string | null;
+};
+
+type AttendanceHistoryApi = {
+  error?: boolean | number | string;
+  message?: string;
+  data?: Array<{
+    RecordDate?: string | null;
+    InTime?: string | null;
+    OutTime?: string | null;
+    ApprovalStatus?: string | null;
+    duration?: string | null;
+  }>;
+};
+
+/** POST employee/get_attendance_records.php for one employee and month. */
+export async function fetchAttendanceRecords(employeeId: number, year: number, month: number) {
+  const payload = await apiRequest<AttendanceHistoryApi>('employee/get_attendance_records.php', {
+    method: 'POST',
+    auth: true,
+    body: {
+      s_year: year,
+      s_month: month,
+      EmployeeID: String(employeeId),
+    },
+  });
+
+  if (isApiError(payload.error)) {
+    throw new Error(payload.message || 'Unable to load attendance records.');
+  }
+
+  const byDay = new Map<number, AttendanceHistoryRecord>();
+  for (const row of payload.data ?? []) {
+    const day = recordDay(row.RecordDate, year, month);
+    if (!day || byDay.has(day)) continue;
+    const approval = mapAttendanceApproval(row.ApprovalStatus);
+    const outTime = cleanTime(row.OutTime);
+    const duration = cleanDuration(row.duration);
+    byDay.set(day, {
+      day,
+      status: approval.status,
+      dayStatus: approval.dayStatus,
+      inTime: cleanTime(row.InTime) ?? '--:--',
+      outTime,
+      duration,
+    });
+  }
+
+  return [...byDay.values()].sort((a, b) => b.day - a.day);
+}
+
+function recordDay(value: string | null | undefined, year: number, month: number) {
+  const match = String(value ?? '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!match) return null;
+  const recordYear = Number(match[1]);
+  const recordMonth = Number(match[2]);
+  const day = Number(match[3]);
+  if (recordYear !== year || recordMonth !== month || day < 1 || day > 31) return null;
+  return day;
+}
+
+function mapAttendanceApproval(value: string | null | undefined): {
+  status: AttendanceHistoryStatus;
+  dayStatus: AttendanceHistoryRecord['dayStatus'];
+} {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'approved') return { status: 'approved', dayStatus: 'present' };
+  if (normalized === 'rejected') return { status: 'rejected', dayStatus: 'rejected' };
+  return { status: 'pending', dayStatus: 'pending' };
+}
+
+function cleanTime(value: string | null | undefined) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed || trimmed === '00:00:00' || trimmed.toUpperCase() === 'N.A.') return null;
+  return trimmed;
+}
+
+function cleanDuration(value: string | null | undefined) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed || trimmed.toUpperCase() === 'N.A.') return null;
+  return trimmed;
+}
+
 /** Strip `data:image/...;base64,` prefix if present. */
 export function toRawBase64(dataUrlOrBase64: string) {
   const comma = dataUrlOrBase64.indexOf(',');

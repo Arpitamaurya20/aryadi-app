@@ -47,6 +47,14 @@
           "cameraPermission": "Aryadibusiness uses your camera to set a profile picture.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
       ]
     ]
   }

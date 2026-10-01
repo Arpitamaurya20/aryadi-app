@@ -20,11 +20,12 @@ import { brandShadow } from '../theme/shadow';
 
 type LoginScreenProps = {
   onLogin: (username: string, password: string) => Promise<void>;
+  initialUsername?: string;
 };
 
-export function LoginScreen({ onLogin }: LoginScreenProps) {
+export function LoginScreen({ onLogin, initialUsername = '' }: LoginScreenProps) {
   const { width, height } = useWindowDimensions();
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);

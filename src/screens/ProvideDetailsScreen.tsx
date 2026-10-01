@@ -2,8 +2,9 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fetchBranches, fetchCompanies, type BranchOption, type CompanyOption } from '../api/company';
 import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
 
@@ -17,23 +18,23 @@ const FieldLine = '#CDE4F5';
 const IconWash = '#D7EEFB';
 const Required = '#E11D48';
 
-const companies = ['Aryadi Business', 'Aryadi Industries', 'Aryadi Services'];
-const branches: Record<string, string[]> = {
-  'Aryadi Business': ['Head Office', 'Noida Branch', 'Lucknow Branch'],
-  'Aryadi Industries': ['Plant 1', 'Plant 2', 'Warehouse'],
-  'Aryadi Services': ['Service Hub', 'Field Office'],
-};
-
 type ProvideDetailsScreenProps = {
   onBack: () => void;
-  onNext?: (company: string, branch: string) => void;
+  onNext?: (selection: { companyId: string; company: string; branchId: string; branch: string }) => void;
 };
 
 export function ProvideDetailsScreen({ onBack, onNext }: ProvideDetailsScreenProps) {
-  const [company, setCompany] = useState('');
-  const [branch, setBranch] = useState('');
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [companyId, setCompanyId] = useState('');
+  const [branchId, setBranchId] = useState('');
   const [openField, setOpenField] = useState<'company' | 'branch' | null>(null);
-  const branchOptions = branches[company] ?? [];
+  const [companyLoading, setCompanyLoading] = useState(true);
+  const [branchLoading, setBranchLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const company = companies.find((item) => item.id === companyId)?.label ?? '';
+  const branch = branches.find((item) => item.id === branchId)?.label ?? '';
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -42,6 +43,56 @@ export function ProvideDetailsScreen({ onBack, onNext }: ProvideDetailsScreenPro
     });
     return () => sub.remove();
   }, [onBack]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCompanies() {
+      setCompanyLoading(true);
+      setError('');
+      try {
+        const rows = await fetchCompanies();
+        if (!cancelled) setCompanies(rows);
+      } catch (loadError) {
+        if (!cancelled) {
+          setCompanies([]);
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load companies.');
+        }
+      } finally {
+        if (!cancelled) setCompanyLoading(false);
+      }
+    }
+    loadCompanies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!companyId) {
+      setBranches([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadBranches() {
+      setBranchLoading(true);
+      setError('');
+      try {
+        const rows = await fetchBranches(companyId);
+        if (!cancelled) setBranches(rows);
+      } catch (loadError) {
+        if (!cancelled) {
+          setBranches([]);
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load branches.');
+        }
+      } finally {
+        if (!cancelled) setBranchLoading(false);
+      }
+    }
+    loadBranches();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   function handleNext() {
     if (!company) {
@@ -52,7 +103,7 @@ export function ProvideDetailsScreen({ onBack, onNext }: ProvideDetailsScreenPro
       Alert.alert('Please select your branch.');
       return;
     }
-    onNext?.(company, branch);
+    onNext?.({ companyId, company, branchId, branch });
   }
 
   return (
@@ -90,32 +141,38 @@ export function ProvideDetailsScreen({ onBack, onNext }: ProvideDetailsScreenPro
         >
           <SelectField
             label="Company"
-            placeholder="Select your company"
+            placeholder={companyLoading ? 'Loading companies...' : 'Select your company'}
             value={company}
             options={companies}
             icon="office-building-outline"
+            loading={companyLoading}
+            enabled={!companyLoading}
             expanded={openField === 'company'}
             onToggle={() => setOpenField((current) => (current === 'company' ? null : 'company'))}
-            onSelect={(value) => {
-              setCompany(value);
-              setBranch('');
+            onSelect={(option) => {
+              setCompanyId(option.id);
+              setBranchId('');
               setOpenField(null);
             }}
           />
           <SelectField
             label="Branch"
-            placeholder={company ? 'Select your branch' : 'Select a company first'}
+            placeholder={
+              !companyId ? 'Select a company first' : branchLoading ? 'Loading branches...' : 'Select your branch'
+            }
             value={branch}
-            options={branchOptions}
+            options={branches}
             icon="map-marker-outline"
-            enabled={Boolean(company)}
+            loading={branchLoading}
+            enabled={Boolean(companyId) && !branchLoading}
             expanded={openField === 'branch'}
             onToggle={() => setOpenField((current) => (current === 'branch' ? null : 'branch'))}
-            onSelect={(value) => {
-              setBranch(value);
+            onSelect={(option) => {
+              setBranchId(option.id);
               setOpenField(null);
             }}
           />
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <Pressable onPress={handleNext} accessibilityRole="button" accessibilityLabel="Next">
             <LinearGradient colors={[LogoNavy, '#1568B8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.next}>
@@ -134,6 +191,7 @@ function SelectField({
   value,
   options,
   icon,
+  loading = false,
   enabled = true,
   expanded,
   onToggle,
@@ -142,12 +200,13 @@ function SelectField({
   label: string;
   placeholder: string;
   value: string;
-  options: string[];
+  options: Array<{ id: string; label: string }>;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  loading?: boolean;
   enabled?: boolean;
   expanded: boolean;
   onToggle: () => void;
-  onSelect: (value: string) => void;
+  onSelect: (option: { id: string; label: string }) => void;
 }) {
   return (
     <View style={styles.fieldBlock}>
@@ -165,9 +224,10 @@ function SelectField({
         <Text style={[styles.fieldText, value ? styles.fieldValue : null]} numberOfLines={1}>
           {value || placeholder}
         </Text>
+        {loading ? <ActivityIndicator size="small" color={LogoMid} /> : null}
         <MaterialCommunityIcons name="chevron-down" size={22} color={Brand.placeholder} />
       </Pressable>
-      {expanded && options.length > 0 ? (
+      {expanded ? (
         <View
           style={[
             styles.menu,
@@ -180,11 +240,17 @@ function SelectField({
             }),
           ]}
         >
-          {options.map((option) => (
-            <Pressable key={option} onPress={() => onSelect(option)} style={styles.option}>
-              <Text style={styles.optionText}>{option}</Text>
-            </Pressable>
-          ))}
+          {options.length === 0 ? (
+            <Text style={styles.emptyOption}>No {label.toLowerCase()} found</Text>
+          ) : (
+            <ScrollView style={styles.menuScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {options.map((option) => (
+                <Pressable key={option.id} onPress={() => onSelect(option)} style={styles.option}>
+                  <Text style={styles.optionText}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </View>
       ) : null}
     </View>
@@ -289,6 +355,22 @@ const styles = StyleSheet.create({
     borderColor: FieldLine,
     backgroundColor: Brand.white,
     overflow: 'hidden',
+  },
+  menuScroll: {
+    maxHeight: 220,
+  },
+  emptyOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: Brand.placeholder,
+    fontSize: 13,
+    fontFamily: 'Poppins_400Regular',
+  },
+  errorText: {
+    marginBottom: 10,
+    color: Required,
+    fontSize: 12,
+    fontFamily: 'Poppins_500Medium',
   },
   option: {
     paddingHorizontal: 14,

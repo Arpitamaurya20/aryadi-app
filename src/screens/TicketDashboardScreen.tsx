@@ -1,12 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { AuthUser } from '../api/auth';
 import { AnimatedTicketIcon, type TicketKind } from '../components/TicketIcons';
 import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
+import { PpmTicketsScreen } from './PpmTicketsScreen';
+import { ServiceTicketsScreen } from './ServiceTicketsScreen';
 
 const LogoNavy = '#0B356E';
 const LogoMid = '#1E8BE0';
@@ -53,19 +56,34 @@ const types: TicketType[] = [
 ];
 
 type TicketDashboardScreenProps = {
+  user?: AuthUser | null;
   onBack: () => void;
 };
 
-export function TicketDashboardScreen({ onBack }: TicketDashboardScreenProps) {
+export function TicketDashboardScreen({ user, onBack }: TicketDashboardScreenProps) {
+  const [openKind, setOpenKind] = useState<TicketKind | null>(null);
   const openCount = types.reduce((sum, item) => sum + item.count, 0);
 
   useEffect(() => {
+    if (openKind) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       onBack();
       return true;
     });
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, openKind]);
+
+  function openCategory(kind: TicketKind) {
+    if (kind === 'ppm' || kind === 'corporateHome') setOpenKind(kind);
+  }
+
+  if (openKind === 'ppm') {
+    return <PpmTicketsScreen user={user} onBack={() => setOpenKind(null)} />;
+  }
+
+  if (openKind === 'corporateHome') {
+    return <ServiceTicketsScreen user={user} onBack={() => setOpenKind(null)} />;
+  }
 
   return (
     <View style={styles.screen}>
@@ -106,13 +124,18 @@ export function TicketDashboardScreen({ onBack }: TicketDashboardScreenProps) {
           {types
             .filter((item) => item.wide)
             .map((item, index) => (
-              <TicketTypeCard key={item.title} item={item} index={index} />
+              <TicketTypeCard key={item.title} item={item} index={index} onPress={() => openCategory(item.kind)} />
             ))}
           <View style={styles.gridRow}>
             {types
               .filter((item) => !item.wide)
               .map((item, index) => (
-                <TicketTypeCard key={item.title} item={item} index={index + 1} />
+                <TicketTypeCard
+                  key={item.title}
+                  item={item}
+                  index={index + 1}
+                  onPress={() => openCategory(item.kind)}
+                />
               ))}
           </View>
         </View>
@@ -121,9 +144,10 @@ export function TicketDashboardScreen({ onBack }: TicketDashboardScreenProps) {
   );
 }
 
-function TicketTypeCard({ item, index }: { item: TicketType; index: number }) {
+function TicketTypeCard({ item, index, onPress }: { item: TicketType; index: number; onPress: () => void }) {
   return (
     <Pressable
+      onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={item.title}
       style={({ pressed }) => [

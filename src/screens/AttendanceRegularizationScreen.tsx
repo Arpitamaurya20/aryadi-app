@@ -1,9 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   BackHandler,
   KeyboardAvoidingView,
   Modal,
@@ -17,6 +17,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AuthUser } from '../api/auth';
+import {
+  formatJoiningDate,
+  normalizeRegularizationTime,
+  parseJoiningDate,
+  requestAttendanceRegularization,
+} from '../api/attendance';
 import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
 
@@ -27,9 +33,9 @@ const PageBg = '#EAF5FC';
 const Mute = '#7A8CA5';
 const SoftBlue = '#E8F4FD';
 const FieldStroke = '#D5E4F2';
+const SickRed = '#E11D48';
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const joiningDate = new Date(2026, 5, 15);
 
 type Entry = {
   id: string;
@@ -48,48 +54,87 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
   const [entries, setEntries] = useState<Entry[]>([createEntry()]);
   const [datePickerFor, setDatePickerFor] = useState<string | null>(null);
   const [reasonFocusId, setReasonFocusId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+
+  const joiningDate = useMemo(() => parseJoiningDate(user.joiningDate), [user.joiningDate]);
+  const joiningLabel = formatJoiningDate(user.joiningDate) || 'Not set';
+  const dateOptions = useMemo(
+    () => buildDateOptions(joiningDate ?? startOfDay(new Date(2000, 0, 1)), new Date()),
+    [joiningDate],
+  );
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (submitting) return true;
       onBack();
       return true;
     });
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, submitting]);
 
   function updateEntry(id: string, patch: Partial<Entry>) {
+    setFormError('');
+    setFormSuccess('');
     setEntries((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
   function addEntry() {
+    setFormError('');
+    setFormSuccess('');
     setEntries((prev) => [...prev, createEntry()]);
   }
 
   function removeEntry(id: string) {
+    setFormError('');
+    setFormSuccess('');
     setEntries((prev) => (prev.length <= 1 ? prev : prev.filter((item) => item.id !== id)));
   }
 
-  function submit() {
+  async function submit() {
+    if (submitting) return;
+    setFormError('');
+    setFormSuccess('');
+
     for (const [index, entry] of entries.entries()) {
       if (!entry.date) {
-        Alert.alert(`Please select a date for Entry #${index + 1}.`);
+        setFormError(`Please select a date for Entry #${index + 1}.`);
         return;
       }
-      if (!entry.inTime.trim() || !entry.outTime.trim()) {
-        Alert.alert(`Please enter in/out time for Entry #${index + 1}.`);
+      if (joiningDate && startOfDay(entry.date).getTime() < startOfDay(joiningDate).getTime()) {
+        setFormError(`Entry #${index + 1}: date cannot be before joining date.`);
+        return;
+      }
+      if (!normalizeRegularizationTime(entry.inTime) || !normalizeRegularizationTime(entry.outTime)) {
+        setFormError(`Please enter in/out time as HH:MM for Entry #${index + 1}.`);
         return;
       }
       if (!entry.reason.trim()) {
-        Alert.alert(`Please enter a reason for Entry #${index + 1}.`);
+        setFormError(`Please enter a reason for Entry #${index + 1}.`);
         return;
       }
     }
-    Alert.alert('Regularization submitted', `${entries.length} entr${entries.length > 1 ? 'ies' : 'y'} sent.`, [
-      { text: 'OK', onPress: onBack },
-    ]);
-  }
 
-  const dateOptions = buildDateOptions(joiningDate, new Date());
+    setSubmitting(true);
+    try {
+      const result = await requestAttendanceRegularization({
+        employeeId: user.employeeId,
+        entries: entries.map((entry) => ({
+          recordDate: toIsoDate(entry.date!),
+          inTime: entry.inTime,
+          outTime: entry.outTime,
+          reason: entry.reason.trim(),
+        })),
+      });
+      setFormSuccess(result.message);
+      setEntries([createEntry()]);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to submit attendance regularization.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <View style={styles.screen}>
@@ -97,7 +142,14 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
       <LinearGradient colors={[LogoNavy, LogoMid, LogoSky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         <SafeAreaView edges={['top']}>
           <View style={styles.header}>
-            <Pressable onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
+            <Pressable
+              onPress={() => {
+                if (!submitting) onBack();
+              }}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
               <MaterialCommunityIcons name="arrow-left" size={22} color={Brand.white} />
             </Pressable>
             <Text style={styles.headerTitle}>Attendance Regularization</Text>
@@ -141,7 +193,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                       {user.username.toUpperCase()}
                     </Text>
                     <Text style={styles.userMeta} numberOfLines={1}>
-                      Joining · {formatDate(joiningDate)}
+                      Joining · {joiningLabel}
                     </Text>
                   </View>
                 </View>
@@ -156,6 +208,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                 <Text style={styles.entriesTitle}>Request Entries</Text>
                 <Pressable
                   onPress={addEntry}
+                  disabled={submitting}
                   style={styles.addBtn}
                   accessibilityRole="button"
                   accessibilityLabel="Add date"
@@ -178,6 +231,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                         onPress={() => removeEntry(entry.id)}
                         hitSlop={8}
                         style={styles.removeBtn}
+                        disabled={submitting}
                         accessibilityRole="button"
                         accessibilityLabel={`Remove entry ${index + 1}`}
                       >
@@ -189,7 +243,9 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                   <View style={styles.fieldGroup}>
                     <Text style={styles.label}>Date</Text>
                     <Pressable
-                      onPress={() => setDatePickerFor(entry.id)}
+                      onPress={() => {
+                        if (!submitting) setDatePickerFor(entry.id);
+                      }}
                       style={styles.field}
                       accessibilityRole="button"
                       accessibilityLabel={`Select date for entry ${index + 1}`}
@@ -201,7 +257,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                       <MaterialCommunityIcons name="chevron-down" size={18} color={Mute} />
                     </Pressable>
                     <Text style={styles.dateHint}>
-                      Allowed: {formatDate(joiningDate)} → Today
+                      Allowed: {joiningLabel} → Today
                     </Text>
                   </View>
 
@@ -216,6 +272,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                           placeholder="09:00"
                           placeholderTextColor={Mute}
                           style={[styles.input, webInputReset]}
+                          editable={!submitting}
                         />
                       </View>
                     </View>
@@ -229,6 +286,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                           placeholder="18:00"
                           placeholderTextColor={Mute}
                           style={[styles.input, webInputReset]}
+                          editable={!submitting}
                         />
                       </View>
                     </View>
@@ -257,6 +315,7 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                         style={[styles.input, styles.reasonInput, webInputReset]}
                         multiline
                         textAlignVertical="top"
+                        editable={!submitting}
                         onFocus={() => setReasonFocusId(entry.id)}
                         onBlur={() => setReasonFocusId(null)}
                       />
@@ -264,18 +323,34 @@ export function AttendanceRegularizationScreen({ user, onBack }: AttendanceRegul
                   </View>
                 </View>
               ))}
+
+              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+              {formSuccess ? <Text style={styles.formSuccess}>{formSuccess}</Text> : null}
             </ScrollView>
 
             <View style={styles.footer}>
-              <Pressable onPress={submit} accessibilityRole="button" accessibilityLabel="Submit regularization">
+              <Pressable
+                onPress={() => {
+                  void submit();
+                }}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Submit regularization"
+              >
                 <LinearGradient
                   colors={[LogoNavy, LogoMid]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.submit}
                 >
-                  <MaterialCommunityIcons name="check-circle-outline" size={18} color={Brand.white} />
-                  <Text style={styles.submitText}>SUBMIT REGULARIZATION</Text>
+                  {submitting ? (
+                    <ActivityIndicator color={Brand.white} />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons name="check-circle-outline" size={18} color={Brand.white} />
+                      <Text style={styles.submitText}>SUBMIT REGULARIZATION</Text>
+                    </>
+                  )}
                 </LinearGradient>
               </Pressable>
             </View>
@@ -342,6 +417,13 @@ function createEntry(): Entry {
 
 function formatDate(date: Date) {
   return `${date.getDate()} ${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function toIsoDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function startOfDay(date: Date) {
@@ -597,6 +679,20 @@ const styles = StyleSheet.create({
   reasonInput: {
     alignSelf: 'stretch',
     height: '100%',
+  },
+  formError: {
+    marginTop: 10,
+    color: SickRed,
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Poppins_500Medium',
+  },
+  formSuccess: {
+    marginTop: 10,
+    color: '#15803D',
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Poppins_500Medium',
   },
   footer: {
     borderTopWidth: 1,

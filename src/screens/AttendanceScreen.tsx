@@ -566,12 +566,28 @@ function InlineWebCamera({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
+    setReady(false);
 
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    async function start() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw Object.assign(new Error('getUserMedia unavailable'), { name: 'Unsupported' });
+      }
+      try {
+        return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      } catch (err) {
+        const name = err instanceof Error ? err.name : '';
+        if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw err;
+        return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+    }
+
+    start()
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -583,10 +599,11 @@ function InlineWebCamera({
             videoRef.current.srcObject = stream;
             videoRef.current.play().catch(() => undefined);
           }
+          setReady(true);
         });
       })
-      .catch(() => {
-        setError('Allow camera access, then try again.');
+      .catch((err: unknown) => {
+        if (!cancelled) setError(cameraErrorMessage(err));
       });
 
     return () => {
@@ -594,11 +611,11 @@ function InlineWebCamera({
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
-  }, []);
+  }, [attempt]);
 
   function capture() {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !ready) return;
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -631,12 +648,41 @@ function InlineWebCamera({
         <Pressable onPress={onCancel} style={styles.webCamCancel}>
           <Text style={styles.webCamCancelText}>Cancel</Text>
         </Pressable>
-        <Pressable onPress={capture} style={styles.webCamCapture}>
-          <Text style={styles.webCamCaptureText}>Capture</Text>
-        </Pressable>
+        {error ? (
+          <Pressable onPress={() => setAttempt((n) => n + 1)} style={styles.webCamCapture}>
+            <Text style={styles.webCamCaptureText}>Try again</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={capture}
+            disabled={!ready}
+            style={[styles.webCamCapture, !ready && { opacity: 0.6 }]}
+          >
+            <Text style={styles.webCamCaptureText}>Capture</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
+}
+
+function cameraErrorMessage(err: unknown) {
+  const name = err instanceof Error ? err.name : '';
+  switch (name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Camera is blocked for this site. Click the icon left of the address bar, set Camera to Allow, then press Try again.';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'No camera was found on this device. Connect a camera, then press Try again.';
+    case 'NotReadableError':
+    case 'AbortError':
+      return 'The camera is being used by another app or browser tab. Close it, then press Try again.';
+    case 'Unsupported':
+      return 'This browser cannot open the camera. Open the app on http://localhost or an HTTPS address.';
+    default:
+      return `Could not open the camera${name ? ` (${name})` : ''}. Press Try again.`;
+  }
 }
 
 function formatClock(date: Date) {

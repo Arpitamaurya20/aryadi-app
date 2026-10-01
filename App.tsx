@@ -11,6 +11,9 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { login, logout, type AuthUser } from './src/api/auth';
+import { loadRememberedUsername, loadSession, saveSession } from './src/api/session';
+import { PunchReminderModal } from './src/components/PunchReminderModal';
+import { usePunchReminder } from './src/hooks/usePunchReminder';
 import { BarcodeInformationScreen } from './src/screens/BarcodeInformationScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { HelpDeskScreen } from './src/screens/HelpDeskScreen';
@@ -27,6 +30,8 @@ import { TicketDashboardScreen } from './src/screens/TicketDashboardScreen';
 import { VendorRegistrationScreen } from './src/screens/VendorRegistrationScreen';
 import { WorkFromHomeScreen } from './src/screens/WorkFromHomeScreen';
 import { AttendanceRegularizationScreen } from './src/screens/AttendanceRegularizationScreen';
+import { AttendanceHistoryScreen } from './src/screens/AttendanceHistoryScreen';
+import { EmployeeKpiScreen } from './src/screens/EmployeeKpiScreen';
 import { WorkZoneScreen } from './src/screens/WorkZoneScreen';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -39,7 +44,7 @@ export default function App() {
     Poppins_700Bold,
   });
   const [showSplash, setShowSplash] = useState(true);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() => loadSession());
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
@@ -52,8 +57,26 @@ export default function App() {
   const [showHrHelpdesk, setShowHrHelpdesk] = useState(false);
   const [showWfh, setShowWfh] = useState(false);
   const [showRegularization, setShowRegularization] = useState(false);
+  const [showEmployeeKpi, setShowEmployeeKpi] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [showSpeakUp, setShowSpeakUp] = useState(false);
   const [showVendors, setShowVendors] = useState(false);
+  const punchReminder = usePunchReminder(user);
+
+  const openAttendanceFromReminder = () => {
+    punchReminder.dismiss();
+    setShowEditProfile(false);
+    setShowMyProfile(false);
+    setShowTickets(false);
+    setShowSiteVisits(false);
+    setShowMappedAssets(false);
+    setShowLeave(false);
+    setShowAttendance(true);
+  };
+
+  useEffect(() => {
+    if (user?.token) saveSession(user);
+  }, [user]);
 
   useEffect(() => {
     if (!fontsLoaded) return;
@@ -95,9 +118,9 @@ export default function App() {
             onUpdateUser={setUser}
           />
         ) : user && showTickets ? (
-          <TicketDashboardScreen onBack={() => setShowTickets(false)} />
+          <TicketDashboardScreen user={user} onBack={() => setShowTickets(false)} />
         ) : user && showSiteVisits ? (
-          <SiteVisitsScreen onBack={() => setShowSiteVisits(false)} />
+          <SiteVisitsScreen user={user} onBack={() => setShowSiteVisits(false)} />
         ) : user && showMappedAssets ? (
           <BarcodeInformationScreen onBack={() => setShowMappedAssets(false)} />
         ) : user && showLeave ? (
@@ -107,11 +130,22 @@ export default function App() {
         ) : user && showConveyance ? (
           <ConveyanceChargesScreen user={user} onBack={() => setShowConveyance(false)} />
         ) : user && showHrHelpdesk ? (
-          <HRHelpdeskScreen onBack={() => setShowHrHelpdesk(false)} />
+          <HRHelpdeskScreen
+            user={user}
+            onBack={() => setShowHrHelpdesk(false)}
+            onHome={() => {
+              setShowHrHelpdesk(false);
+              setShowWorkZone(false);
+            }}
+          />
         ) : user && showWfh ? (
           <WorkFromHomeScreen user={user} onBack={() => setShowWfh(false)} />
         ) : user && showRegularization ? (
           <AttendanceRegularizationScreen user={user} onBack={() => setShowRegularization(false)} />
+        ) : user && showEmployeeKpi ? (
+          <EmployeeKpiScreen user={user} onBack={() => setShowEmployeeKpi(false)} />
+        ) : user && showHistory ? (
+          <AttendanceHistoryScreen user={user} onBack={() => setShowHistory(false)} />
         ) : user && showWorkZone ? (
           <WorkZoneScreen
             user={user}
@@ -123,11 +157,13 @@ export default function App() {
             onOpenHrHelpdesk={() => setShowHrHelpdesk(true)}
             onOpenWfh={() => setShowWfh(true)}
             onOpenRegularization={() => setShowRegularization(true)}
+            onOpenEmployeeKpi={() => setShowEmployeeKpi(true)}
+            onOpenHistory={() => setShowHistory(true)}
           />
         ) : user && showSpeakUp ? (
           <HelpDeskScreen user={user} onBack={() => setShowSpeakUp(false)} />
         ) : user && showVendors ? (
-          <VendorRegistrationScreen onBack={() => setShowVendors(false)} />
+          <VendorRegistrationScreen user={user} onBack={() => setShowVendors(false)} />
         ) : user ? (
           <HomeScreen
             user={user}
@@ -145,10 +181,14 @@ export default function App() {
               setShowHrHelpdesk(false);
               setShowWfh(false);
               setShowRegularization(false);
+              setShowEmployeeKpi(false);
+              setShowHistory(false);
               setShowSpeakUp(false);
               setShowVendors(false);
               setUser(null);
             }}
+            onOpenProfile={() => setShowMyProfile(true)}
+            onEditProfile={() => setShowEditProfile(true)}
             onOpenTickets={() => setShowTickets(true)}
             onOpenSiteVisits={() => setShowSiteVisits(true)}
             onOpenMappedAssets={() => setShowMappedAssets(true)}
@@ -157,8 +197,14 @@ export default function App() {
             onOpenVendors={() => setShowVendors(true)}
           />
         ) : (
-          <LoginScreen onLogin={async (username, password) => setUser(await login(username, password))} />
+          <LoginScreen
+            initialUsername={loadRememberedUsername()}
+            onLogin={async (username, password) => setUser(await login(username, password))}
+          />
         )}
+        {user && fontsLoaded && !showSplash ? (
+          <PunchReminderModal time={punchReminder.ringingTime} onPunchIn={openAttendanceFromReminder} onDismiss={punchReminder.dismiss} />
+        ) : null}
       </View>
     </SafeAreaProvider>
   );

@@ -1,10 +1,13 @@
-import { apiRequest, clearAuthToken, setAuthToken } from './client';
+import { apiRequest, setAuthToken } from './client';
 import { fetchEmployeeProfile } from './profile';
+import { clearSession, rememberUsername, saveSession } from './session';
 
 export type AuthUser = {
   id: number;
   employeeId: number;
   username: string;
+  /** Login name sent as CreatedBy. Stays the account username after profile load. */
+  loginName: string;
   /** Display role / designation */
   user_type: string;
   accountType: string;
@@ -174,6 +177,7 @@ export async function login(username: string, password: string): Promise<AuthUse
     id: data.UserID ?? 0,
     employeeId,
     username: data.UserName || username.trim(),
+    loginName: data.UserName || username.trim(),
     user_type: roleLabel,
     accountType: data.UserType || 'Employee',
     email: null,
@@ -196,13 +200,18 @@ export async function login(username: string, password: string): Promise<AuthUse
     ...emptyAuthExtras(),
   };
 
+  let signedIn = baseUser;
   try {
-    return await fetchEmployeeProfile(baseUser);
+    signedIn = await fetchEmployeeProfile(baseUser);
   } catch {
-    return baseUser;
+    signedIn = baseUser;
   }
+
+  rememberUsername(username.trim());
+  saveSession(signedIn);
+  return signedIn;
 }
 
 export function logout() {
-  clearAuthToken();
+  clearSession();
 }

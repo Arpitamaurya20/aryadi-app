@@ -22,8 +22,8 @@ const LIVE_API_BASE = 'https://techxpertindia.in/api';
 const LOCAL_API_PATH = '/Projects/aryadibussines/api';
 
 /**
- * Your PC LAN IP for a physical phone/tablet on the same Wi‑Fi.
- * Find it with `ipconfig` (IPv4). Android emulator uses 10.0.2.2 automatically.
+ * Your PC LAN IP for a phone or tablet on the same Wi‑Fi.
+ * Find it with `ipconfig` (IPv4). The Android APK uses this address.
  */
 const LOCAL_DEVICE_HOST = '192.168.29.111';
 
@@ -31,11 +31,6 @@ function localBaseUrl() {
   if (Platform.OS === 'web') {
     return `http://localhost${LOCAL_API_PATH}`;
   }
-  if (Platform.OS === 'android') {
-    // Android emulator → host machine loopback
-    return `http://10.0.2.2${LOCAL_API_PATH}`;
-  }
-  // iOS simulator can use localhost; physical iOS device needs LAN IP
   return `http://${LOCAL_DEVICE_HOST}${LOCAL_API_PATH}`;
 }
 

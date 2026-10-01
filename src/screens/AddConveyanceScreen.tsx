@@ -38,14 +38,15 @@ type AddConveyanceScreenProps = {
   onBack: () => void;
   onSubmit: (values: ConveyanceFormValues) => Promise<void>;
   submitting?: boolean;
+  initialRemarks?: string;
 };
 
-export function AddConveyanceScreen({ onBack, onSubmit, submitting = false }: AddConveyanceScreenProps) {
+export function AddConveyanceScreen({ onBack, onSubmit, submitting = false, initialRemarks = '' }: AddConveyanceScreenProps) {
   const today = formatToday();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
-  const [remarks, setRemarks] = useState('');
+  const [remarks, setRemarks] = useState(initialRemarks);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
