@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { getApiBaseUrl } from './config';
 
 type ListResponse<T> = {
   data?: T[] | null;
@@ -273,6 +274,234 @@ export async function verifyStartWorkOtp(ticketId: string, otp: string) {
     body: { TicketID: ticketId, TicketOTP: otp.trim() },
   });
   if (isApiError(payload?.error)) throw new Error(payload?.message || 'The OTP is incorrect or expired.');
+}
+
+/** POST send_feebackback_link.php { phonenumber, TicketID }; the client gets a rating link on WhatsApp */
+export async function sendFeedbackLink(ticketId: string, phone: string) {
+  const digits = phone.replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) throw new Error('Enter a valid 10-digit phone number.');
+  const payload = await apiRequest<StatusResponse>('send_feebackback_link.php', {
+    method: 'POST',
+    auth: true,
+    body: { phonenumber: `+91${digits}`, TicketID: ticketId },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'Could not send the feedback link.');
+  return payload?.message || 'Feedback link sent.';
+}
+
+/** POST generate_otp_for_closure.php { BranchID, TicketID }; the branch receives the closure OTP on WhatsApp */
+export async function sendCloseTicketOtp(ticketId: string, branchId: string) {
+  if (!branchId) throw new Error('This ticket has no branch linked, so the OTP cannot be sent.');
+  const payload = await apiRequest<StatusResponse>('generate_otp_for_closure.php', {
+    method: 'POST',
+    auth: true,
+    body: { BranchID: branchId, TicketID: ticketId },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'Could not send the closure OTP.');
+  return payload?.message || 'Closure OTP sent to the branch on WhatsApp.';
+}
+
+/** POST verify_ticket_close_otp.php { TicketID, TicketCloseOTP }; closes the ticket and emails the report PDF */
+export async function verifyCloseTicketOtp(ticketId: string, otp: string) {
+  const payload = await apiRequest<StatusResponse>('verify_ticket_close_otp.php', {
+    method: 'POST',
+    auth: true,
+    body: { TicketID: ticketId, TicketCloseOTP: otp.trim() },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'The OTP is incorrect or expired.');
+  return payload?.message || 'Ticket closed!';
+}
+
+export type WorkImageAction = 'pre_img' | 'post_img' | 'Service_Report';
+
+export type TicketWorkImage = {
+  id: string;
+  action: WorkImageAction;
+  url: string;
+  date: string;
+  time: string;
+};
+
+function adminUrl() {
+  return getApiBaseUrl().replace(/\/api$/, '');
+}
+
+function ticketMediaUrl(fileName: string) {
+  if (/^https?:\/\//i.test(fileName)) return fileName;
+  return `${adminUrl()}/admin/media/ticket_media/${encodeURIComponent(fileName)}`;
+}
+
+/** POST get_capture_image_by_ticketid.php { TicketID, Action } — one call per action */
+export async function fetchTicketWorkImages(ticketId: string): Promise<TicketWorkImage[]> {
+  const actions: WorkImageAction[] = ['pre_img', 'post_img', 'Service_Report'];
+  const lists = await Promise.all(
+    actions.map(async (action) => {
+      const rows = await fetchList<Record<string, unknown>>(
+        'get_capture_image_by_ticketid.php',
+        { TicketID: ticketId, Action: action },
+        'Could not load work photos.',
+      );
+      return rows
+        .filter((row) => text(row.Image) && text(row.IsActive) !== '0')
+        .map((row) => ({
+          id: text(row.ID),
+          action,
+          url: ticketMediaUrl(text(row.Image)),
+          date: text(row.CreatedDate).slice(0, 10),
+          time: text(row.CreatedTime),
+        }));
+    }),
+  );
+  return lists.flat().sort((a, b) => Number(a.id) - Number(b.id));
+}
+
+/**
+ * POST get_capture_image.php { data: { TicketID, imageData, Action, CreatedBy } }
+ * imageData is raw base64 without the data: prefix.
+ */
+export async function uploadTicketWorkImage(input: {
+  ticketId: string;
+  action: WorkImageAction;
+  base64: string;
+  createdBy: string;
+}) {
+  const payload = await apiRequest<StatusResponse>('get_capture_image.php', {
+    method: 'POST',
+    auth: true,
+    body: {
+      data: {
+        TicketID: input.ticketId,
+        imageData: input.base64.replace(/^data:[^;]+;base64,/, ''),
+        Action: input.action,
+        CreatedBy: input.createdBy,
+      },
+    },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'Could not upload the photo.');
+}
+
+/** POST delete_r_n_m_ticket_image.php { TicketID, ImageID } */
+export async function deleteTicketWorkImage(ticketId: string, imageId: string) {
+  const payload = await apiRequest<StatusResponse & { emessage?: string }>('delete_r_n_m_ticket_image.php', {
+    method: 'POST',
+    auth: true,
+    body: { TicketID: ticketId, ImageID: imageId },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.emessage || payload?.message || 'Could not delete the photo.');
+}
+
+export type ServiceReportFields = {
+  problemReportedByClient: string;
+  observation: string;
+  actionTaken: string;
+  remarks: string;
+  clientRepresentative: string;
+  clientRepresentativeContact: string;
+  clientRepresentativeEmails: string;
+  clientRepresentativeDesignation: string;
+};
+
+export type GeneralServiceReport = ServiceReportFields & {
+  /** corporate_ticket_general_service_report.ID, -1 when not submitted yet */
+  id: number;
+  /** Stored signature filename, '' when none */
+  clientSignature: string;
+  createdDate: string;
+  createdTime: string;
+  createdBy: string;
+};
+
+function signatureFileName(value: unknown) {
+  const raw = text(value);
+  return raw ? decodeURIComponent(raw.split('?')[0].split('/').pop() ?? '') : '';
+}
+
+export function clientSignatureUrl(fileName: string) {
+  return `${adminUrl()}/admin/media/signature/${encodeURIComponent(fileName)}`;
+}
+
+export function serviceReportPdfUrl(reportId: number) {
+  return `${adminUrl()}/admin/corporate-tickets/action/generate_service_report_pdf.php?ServiceReportID=${reportId}`;
+}
+
+/**
+ * POST get_general_service_report_details.php { TicketID }
+ * Returns the saved report, or defaults (client message, site incharge, branch mobile) when none exists.
+ */
+export async function fetchGeneralServiceReport(ticketId: string): Promise<GeneralServiceReport> {
+  const raw = await apiRequest<Record<string, unknown> & StatusResponse>('get_general_service_report_details.php', {
+    method: 'POST',
+    auth: true,
+    body: { TicketID: ticketId },
+  });
+  if (isApiError(raw?.error)) throw new Error(raw?.message || 'Could not load the service report.');
+  const id = Number(raw?.ID ?? -1);
+  return {
+    id: id > 0 ? id : -1,
+    problemReportedByClient: text(raw?.ProblemReportedByClient),
+    observation: text(raw?.Observation),
+    actionTaken: text(raw?.ActionTaken),
+    remarks: text(raw?.Remarks),
+    clientRepresentative: text(raw?.ClientRepresentative),
+    clientRepresentativeContact: text(raw?.ClientRepresentativeContact),
+    clientRepresentativeEmails: text(raw?.ClientRepresentativeEmails),
+    clientRepresentativeDesignation: text(raw?.ClientRepresentativeDesignation),
+    clientSignature: signatureFileName(raw?.ClientSignature),
+    createdDate: text(raw?.CreatedDate).slice(0, 10),
+    createdTime: text(raw?.CreatedTime),
+    createdBy: text(raw?.CreatedBy),
+  };
+}
+
+/**
+ * POST capture_customer_signature.php { imageData, TicketID, GeneralServiceReportID }
+ * With GeneralServiceReportID -1 the signature waits in temp_client_signature until the report is first saved.
+ */
+export async function saveClientSignature(input: { ticketId: string; reportId: number; base64: string }) {
+  const payload = await apiRequest<StatusResponse & { ClientSignature?: string }>('capture_customer_signature.php', {
+    method: 'POST',
+    auth: true,
+    body: {
+      imageData: input.base64.replace(/^data:[^;]+;base64,/, ''),
+      TicketID: input.ticketId,
+      GeneralServiceReportID: input.reportId > 0 ? input.reportId : -1,
+    },
+  });
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'Could not save the signature.');
+  return signatureFileName(payload?.ClientSignature);
+}
+
+/** POST post_general_service_report.php — inserts when reportId is -1, otherwise updates */
+export async function saveGeneralServiceReport(input: {
+  ticketId: string;
+  reportId: number;
+  createdBy: string;
+  fields: ServiceReportFields;
+}): Promise<number> {
+  const { fields } = input;
+  const payload = await apiRequest<StatusResponse & { ServiceReportID?: string | number }>(
+    'post_general_service_report.php',
+    {
+      method: 'POST',
+      auth: true,
+      body: {
+        ProblemReportedByClient: fields.problemReportedByClient.trim(),
+        Observation: fields.observation.trim(),
+        ActionTaken: fields.actionTaken.trim(),
+        Remarks: fields.remarks.trim(),
+        ClientRepresentative: fields.clientRepresentative.trim(),
+        ClientRepresentativeContact: fields.clientRepresentativeContact.trim(),
+        ClientRepresentativeEmails: fields.clientRepresentativeEmails.trim(),
+        ClientRepresentativeDesignation: fields.clientRepresentativeDesignation.trim(),
+        ServiceReportID: input.reportId > 0 ? input.reportId : -1,
+        ServiceReportTicketID: input.ticketId,
+        CreatedBy: input.createdBy,
+      },
+    },
+  );
+  if (isApiError(payload?.error)) throw new Error(payload?.message || 'Could not save the service report.');
+  const id = Number(payload?.ServiceReportID ?? input.reportId);
+  return id > 0 ? id : input.reportId;
 }
 
 export type TicketComment = {

@@ -188,7 +188,6 @@ export default function App() {
               setUser(null);
             }}
             onOpenProfile={() => setShowMyProfile(true)}
-            onEditProfile={() => setShowEditProfile(true)}
             onOpenTickets={() => setShowTickets(true)}
             onOpenSiteVisits={() => setShowSiteVisits(true)}
             onOpenMappedAssets={() => setShowMappedAssets(true)}

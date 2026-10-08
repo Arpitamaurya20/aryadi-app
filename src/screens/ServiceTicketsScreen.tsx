@@ -246,7 +246,17 @@ export function ServiceTicketsScreen({ user, onBack }: ServiceTicketsScreenProps
   }
 
   if (activeTicket) {
-    return <ServiceTicketDetailScreen ticket={activeTicket} user={user} onBack={() => setActiveTicket(null)} />;
+    return (
+      <ServiceTicketDetailScreen
+        ticket={activeTicket}
+        user={user}
+        onBack={() => setActiveTicket(null)}
+        onClosed={() => {
+          setActiveTicket(null);
+          void loadTickets(true);
+        }}
+      />
+    );
   }
 
   return (

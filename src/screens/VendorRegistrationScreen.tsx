@@ -628,9 +628,10 @@ export function VendorRegistrationScreen({ user, onBack }: VendorRegistrationScr
       </LinearGradient>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.scrollClip}>
         <ScrollView
           ref={formScrollRef}
-          style={styles.scroller}
+          style={styles.flex}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -815,6 +816,7 @@ export function VendorRegistrationScreen({ user, onBack }: VendorRegistrationScr
             </LinearGradient>
           </Pressable>
         </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </View>
   );
@@ -1000,12 +1002,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
   },
-  scroller: {
+  scrollClip: {
     flex: 1,
     marginTop: -20,
+    marginHorizontal: 16,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: 'hidden',
   },
   content: {
-    paddingHorizontal: 16,
     paddingBottom: 20,
   },
   card: {

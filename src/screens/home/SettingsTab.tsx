@@ -34,13 +34,12 @@ type SettingsTabProps = {
   user: AuthUser;
   data: HomeData;
   onOpenProfile: () => void;
-  onEditProfile: () => void;
   onOpenWorkZone: () => void;
   onOpenSpeakUp: () => void;
   onLogout: () => void;
 };
 
-export function SettingsTab({ user, data, onOpenProfile, onEditProfile, onOpenWorkZone, onOpenSpeakUp, onLogout }: SettingsTabProps) {
+export function SettingsTab({ user, data, onOpenProfile, onOpenWorkZone, onOpenSpeakUp, onLogout }: SettingsTabProps) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [reminderTime, setReminderTime] = useState<string | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
@@ -122,8 +121,7 @@ export function SettingsTab({ user, data, onOpenProfile, onEditProfile, onOpenWo
       </LinearGradient>
 
       <Group title="Account">
-        <Row icon="account-edit-outline" title="Edit Profile" text="Update your contact information" onPress={onEditProfile} />
-        <Row icon="briefcase-clock-outline" title="Attendance & Leave" text="Punch in, leave, WFH and conveyance" onPress={onOpenWorkZone} divider />
+        <Row icon="briefcase-clock-outline" title="Attendance & Leave" text="Punch in, leave, WFH and conveyance" onPress={onOpenWorkZone} />
       </Group>
 
       <Group title="Alerts" hint="Choose what shows in Notifications">

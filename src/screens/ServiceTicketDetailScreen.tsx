@@ -35,7 +35,9 @@ import { Brand } from '../theme/colors';
 import { brandShadow } from '../theme/shadow';
 import { statusTone, typeTone } from '../theme/ticketTones';
 import { ConveyanceChargesScreen } from './ConveyanceChargesScreen';
+import { SafetyChecklistScreen, type SafetyAnswers } from './SafetyChecklistScreen';
 import { SiteVisitsScreen } from './SiteVisitsScreen';
+import { TicketFullDetailsScreen } from './TicketFullDetailsScreen';
 
 const Navy = '#0B356E';
 const Sky = '#1E8BE0';
@@ -48,8 +50,8 @@ const Danger = '#DC2626';
 const Success = '#059669';
 
 type McIcon = ComponentProps<typeof MaterialCommunityIcons>['name'];
-type SubView = 'conveyance' | 'siteVisit' | null;
-type SheetKind = 'info' | 'comments' | 'payments' | 'startWork' | null;
+type SubView = 'conveyance' | 'siteVisit' | 'details' | 'safety' | null;
+type SheetKind = 'comments' | 'payments' | 'startWork' | null;
 
 const StartableStatuses = [
   'raised',
@@ -128,9 +130,10 @@ type ServiceTicketDetailScreenProps = {
   ticket: ServiceTicket;
   user?: AuthUser | null;
   onBack: () => void;
+  onClosed: () => void;
 };
 
-export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicketDetailScreenProps) {
+export function ServiceTicketDetailScreen({ ticket, user, onBack, onClosed }: ServiceTicketDetailScreenProps) {
   const corporate = ticket.source === 'corporate';
   const closed = ticket.group === 'closed';
   const [detail, setDetail] = useState<CorporateTicketDetail | null>(null);
@@ -139,6 +142,8 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
   const [subView, setSubView] = useState<SubView>(null);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [workStarted, setWorkStarted] = useState(false);
+  const [safetyAnswers, setSafetyAnswers] = useState<SafetyAnswers>({});
+  const [safetyDone, setSafetyDone] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!corporate) return;
@@ -183,6 +188,37 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
     return <SiteVisitsScreen user={user} onBack={() => setSubView(null)} />;
   }
 
+  if (subView === 'safety') {
+    return (
+      <SafetyChecklistScreen
+        ticketCode={ticket.ticketCode}
+        initialAnswers={safetyAnswers}
+        onBack={(answers) => {
+          setSafetyAnswers(answers);
+          setSubView(null);
+        }}
+        onSubmit={(answers) => {
+          setSafetyAnswers(answers);
+          setSafetyDone(true);
+          setSubView(null);
+          setSheet('startWork');
+        }}
+      />
+    );
+  }
+
+  if (subView === 'details') {
+    return (
+      <TicketFullDetailsScreen
+        ticket={ticket}
+        detail={detail}
+        user={user}
+        onBack={() => setSubView(null)}
+        onClosed={onClosed}
+      />
+    );
+  }
+
   const status = detail?.status || ticket.status;
   const statusColors = statusTone(status);
   const priority = detail?.priority || ticket.priority;
@@ -205,7 +241,6 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
       : null;
 
   const canStartWork = corporate && !closed && !!detail && StartableStatuses.includes(status.trim().toLowerCase());
-
   const operations: { key: string; icon: McIcon; color: string; bg: string; title: string; hint: string; onPress: () => void; hidden?: boolean }[] = [
     {
       key: 'info',
@@ -213,8 +248,9 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
       color: Sky,
       bg: '#EAF4FD',
       title: 'View Details',
-      hint: 'Every field recorded on this ticket',
-      onPress: () => setSheet('info'),
+      hint: 'Ticket info, work photos and service report',
+      onPress: () => setSubView('details'),
+      hidden: corporate && (!detail || canStartWork),
     },
     {
       key: 'site',
@@ -360,26 +396,6 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
           </View>
         ) : null}
 
-        {canStartWork ? (
-          <Pressable
-            onPress={() => setSheet('startWork')}
-            style={({ pressed }) => [styles.startWork, cardShadow, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Start work"
-          >
-            <LinearGradient colors={[Navy, Sky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.startWorkInner}>
-              <View style={styles.startWorkIcon}>
-                <MaterialCommunityIcons name="play-circle" size={26} color={Brand.white} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.startWorkTitle}>Start Work</Text>
-                <Text style={styles.startWorkHint}>Verify with the OTP sent to the branch</Text>
-              </View>
-              <Ionicons name="arrow-forward" size={20} color={Brand.white} />
-            </LinearGradient>
-          </Pressable>
-        ) : null}
-
         {workStarted && !canStartWork ? (
           <View style={[styles.banner, cardShadow, styles.bannerOk]}>
             <View style={[styles.bannerIcon, { backgroundColor: '#D1FAE5' }]}>
@@ -387,7 +403,7 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.bannerTitle}>Work started</Text>
-              <Text style={styles.bannerText}>OTP verified. The ticket is now Work In Progress.</Text>
+              <Text style={styles.bannerText}>OTP verified. Open View Details to add photos and the service report.</Text>
             </View>
           </View>
         ) : null}
@@ -484,6 +500,27 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
         </Card>
 
         <Text style={styles.sectionLabel}>Operations</Text>
+        {canStartWork ? (
+          <Pressable
+            onPress={() => (safetyDone ? setSheet('startWork') : setSubView('safety'))}
+            style={({ pressed }) => [styles.startWork, cardShadow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Start work"
+          >
+            <LinearGradient colors={[Navy, Sky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.startWorkInner}>
+              <View style={styles.startWorkIcon}>
+                <MaterialCommunityIcons name="play-circle" size={26} color={Brand.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.startWorkTitle}>Start Work</Text>
+                <Text style={styles.startWorkHint}>
+                  {safetyDone ? 'Safety checklist done · verify with branch OTP' : 'Complete the safety checklist, then verify OTP'}
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward" size={20} color={Brand.white} />
+            </LinearGradient>
+          </Pressable>
+        ) : null}
         <View style={[styles.menu, cardShadow]}>
           {operations
             .filter((item) => !item.hidden)
@@ -509,7 +546,6 @@ export function ServiceTicketDetailScreen({ ticket, user, onBack }: ServiceTicke
         </View>
       </ScrollView>
 
-      <InfoSheet visible={sheet === 'info'} ticket={ticket} detail={detail} onClose={() => setSheet(null)} />
       {corporate ? (
         <>
           <CommentsSheet
@@ -738,71 +774,6 @@ function Sheet({ visible, title, subtitle, onClose, children, footer }: {
         </View>
       </KeyboardAvoidingView>
     </Modal>
-  );
-}
-
-function InfoRow({ icon, label, value }: { icon: McIcon; label: string; value: string }) {
-  if (!value) return null;
-  return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIcon}>
-        <MaterialCommunityIcons name={icon} size={16} color={Sky} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
-      </View>
-    </View>
-  );
-}
-
-function InfoSheet({ visible, ticket, detail, onClose }: {
-  visible: boolean;
-  ticket: ServiceTicket;
-  detail: CorporateTicketDetail | null;
-  onClose: () => void;
-}) {
-  const corporate = ticket.source === 'corporate';
-  return (
-    <Sheet visible={visible} title="Full Details" subtitle={ticket.ticketCode} onClose={onClose}>
-      <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
-        <InfoRow icon="pound" label={corporate ? 'Ticket ID' : 'Booking ID'} value={ticket.id} />
-        <InfoRow icon="list-status" label="Status" value={detail?.status || ticket.status} />
-        <InfoRow icon="shape-outline" label="Type" value={ticket.type} />
-        <InfoRow icon="tools" label="Service" value={ticket.service} />
-        <InfoRow icon="wrench-outline" label="Sub service" value={detail?.subService || ticket.subService} />
-        {corporate ? (
-          <>
-            <InfoRow icon="domain" label="Company" value={detail?.companyName ?? ''} />
-            <InfoRow icon="office-building-outline" label="Branch" value={detail?.branchSite || ticket.site} />
-            <InfoRow icon="map-marker-outline" label="Branch address" value={detail?.branchAddress ?? ''} />
-            <InfoRow icon="account-hard-hat-outline" label="Employee" value={detail?.employeeName ?? ''} />
-            <InfoRow icon="cog-outline" label="Asset" value={detail?.equipmentName ?? ''} />
-            <InfoRow icon="message-text-outline" label="Issue" value={ticket.message} />
-            <InfoRow icon="text-box-outline" label="Description" value={ticket.description} />
-            <InfoRow icon="flag-outline" label="Priority" value={detail?.priority || ticket.priority} />
-            <InfoRow icon="calendar-plus" label="Raised" value={joinDateTime(ticket.date, ticket.time)} />
-            <InfoRow icon="calendar-clock-outline" label="Due date" value={displayDate(detail?.dueDate || ticket.dueDate)} />
-            <InfoRow icon="check-decagram-outline" label="Closed" value={joinDateTime(ticket.closeDate, ticket.closeTime)} />
-            <InfoRow icon="file-document-outline" label="Quotation status" value={ticket.quotationStatus} />
-            <InfoRow icon="package-variant-closed" label="Spare part status" value={detail?.sparePartStatus ?? ''} />
-            <InfoRow icon="identifier" label="Client ticket ID" value={detail?.clientTicketId || ticket.clientTicketId} />
-            <InfoRow icon="phone-in-talk-outline" label="Call type" value={ticket.callType} />
-            <InfoRow icon="comment-text-outline" label="Remarks" value={ticket.remarks} />
-          </>
-        ) : (
-          <>
-            <InfoRow icon="account-outline" label="Customer" value={ticket.site} />
-            <InfoRow icon="phone-outline" label="Phone" value={ticket.phone} />
-            <InfoRow icon="email-outline" label="Email" value={ticket.email} />
-            <InfoRow icon="map-marker-outline" label="Address" value={ticket.address} />
-            <InfoRow icon="calendar-clock-outline" label="Booking" value={joinDateTime(ticket.date, ticket.time)} />
-            <InfoRow icon="cash" label="Payment" value={ticket.paymentStatus} />
-            <InfoRow icon="message-text-outline" label="Subject" value={ticket.message} />
-          </>
-        )}
-      </ScrollView>
-    </Sheet>
   );
 }
 
@@ -1290,23 +1261,6 @@ const styles = StyleSheet.create({
   sheetState: { alignItems: 'center', gap: 10, paddingVertical: 36 },
   sheetStateText: { color: Slate, fontSize: 13, fontFamily: 'Poppins_400Regular', textAlign: 'center' },
   sheetError: { color: '#B91C1C', fontSize: 12.5, fontFamily: 'Poppins_500Medium', marginBottom: 10 },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F4F8',
-  },
-  infoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF6FE',
-  },
-  infoValue: { color: Ink, fontSize: 13.5, lineHeight: 19, fontFamily: 'Poppins_600SemiBold' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

@@ -1,6 +1,7 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -17,10 +18,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { completeSiteVisit, uploadCustomerSignature } from '../api/siteVisits';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { Brand } from '../theme/colors';
+import { brandShadow } from '../theme/shadow';
 
-const HeaderBlue = '#1E88E5';
-const SaveTeal = '#1A7C89';
-const Required = '#E11D48';
+const Navy = '#0B356E';
+const Sky = '#1E8BE0';
+const PageBg = '#F4F6FA';
+const Ink = '#0F172A';
+const Slate = '#64748B';
+const Muted = '#94A3B8';
+const Line = '#E5E9F0';
+const Danger = '#DC2626';
+const Success = '#059669';
+const MaxSummary = 1000;
+
+const cardShadow = brandShadow('0 2px 8px rgba(15, 23, 42, 0.05)', {
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 6,
+  elevation: 1,
+});
 
 type VisitorSummaryScreenProps = {
   siteVisitId: number;
@@ -34,18 +51,17 @@ export function VisitorSummaryScreen({ siteVisitId, createdBy, onBack, onSaved }
   const [summary, setSummary] = useState('');
   const [hasInk, setHasInk] = useState(false);
   const [signatureSaved, setSignatureSaved] = useState(false);
-  const [savingSignature, setSavingSignature] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      onBack();
+      if (!submitting) onBack();
       return true;
     });
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, submitting]);
 
   function clearSignature() {
     padRef.current?.clear();
@@ -54,38 +70,14 @@ export function VisitorSummaryScreen({ siteVisitId, createdBy, onBack, onSaved }
     setError('');
   }
 
-  async function saveSignature() {
-    if (savingSignature || submitting) return;
-    if (!padRef.current?.hasInk()) {
-      setError('Draw a signature first.');
-      return;
-    }
-    const imageData = padRef.current.toJpegBase64();
-    if (!imageData) {
-      setError('Draw a signature first.');
-      return;
-    }
-    setSavingSignature(true);
-    setError('');
-    try {
-      await uploadCustomerSignature(siteVisitId, imageData);
-      setSignatureSaved(true);
-    } catch (saveError) {
-      setSignatureSaved(false);
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save the signature.');
-    } finally {
-      setSavingSignature(false);
-    }
-  }
-
   async function submit() {
-    if (savingSignature || submitting) return;
+    if (submitting) return;
     if (!summary.trim()) {
-      setError('Summary is required.');
+      setError('Please write the visit summary.');
       return;
     }
-    if (!signatureSaved) {
-      setError(hasInk ? 'Save the signature before submitting.' : 'Draw and save a signature.');
+    if (!signatureSaved && !padRef.current?.hasInk()) {
+      setError('Please take the customer signature.');
       return;
     }
     if (!createdBy.trim()) {
@@ -95,11 +87,13 @@ export function VisitorSummaryScreen({ siteVisitId, createdBy, onBack, onSaved }
     setSubmitting(true);
     setError('');
     try {
-      await completeSiteVisit({
-        siteVisitId,
-        createdBy: createdBy.trim(),
-        summary: summary.trim(),
-      });
+      if (!signatureSaved) {
+        const imageData = padRef.current?.toJpegBase64();
+        if (!imageData) throw new Error('Please take the customer signature.');
+        await uploadCustomerSignature(siteVisitId, imageData);
+        setSignatureSaved(true);
+      }
+      await completeSiteVisit({ siteVisitId, createdBy: createdBy.trim(), summary: summary.trim() });
       onSaved();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Unable to submit the summary.');
@@ -110,171 +104,214 @@ export function VisitorSummaryScreen({ siteVisitId, createdBy, onBack, onSaved }
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <View style={styles.headerBar}>
+      <LinearGradient colors={[Navy, Sky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         <SafeAreaView edges={['top']}>
           <View style={styles.header}>
-            <Pressable onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
-              <MaterialCommunityIcons name="arrow-left" size={24} color={Brand.white} />
+            <Pressable
+              onPress={onBack}
+              disabled={submitting}
+              style={styles.backBtn}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <Ionicons name="arrow-back" size={22} color={Brand.white} />
             </Pressable>
-            <Text style={styles.headerTitle}>visitor Summary</Text>
+            <Text style={styles.headerTitle}>Visitor Summary</Text>
           </View>
         </SafeAreaView>
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           scrollEnabled={scrollEnabled}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.label}>
-            summary<Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            value={summary}
-            onChangeText={setSummary}
-            multiline
-            textAlignVertical="top"
-            style={[styles.summary, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
-          />
-
-          <SignaturePad
-            ref={padRef}
-            onInkChange={(ink) => {
-              setHasInk(ink);
-              setSignatureSaved(false);
-            }}
-            onDrawStart={() => setScrollEnabled(false)}
-            onDrawEnd={() => setScrollEnabled(true)}
-          />
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {signatureSaved ? <Text style={styles.saved}>Signature saved</Text> : null}
-
-          <View style={styles.actions}>
-            <Pressable onPress={clearSignature} style={styles.clearBtn} accessibilityRole="button" accessibilityLabel="Clear signature">
-              <Text style={styles.clearText}>Clear Signature</Text>
-            </Pressable>
-            <Pressable
-              onPress={saveSignature}
-              style={styles.saveBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Save signature"
-            >
-              {savingSignature ? <ActivityIndicator color={Brand.white} /> : <Text style={styles.saveText}>Save Signature</Text>}
-            </Pressable>
+          <View style={[styles.card, cardShadow]}>
+            <SectionTitle icon="text-box-outline" title="Visit Summary" required />
+            <TextInput
+              value={summary}
+              onChangeText={(value) => {
+                setSummary(value);
+                setError('');
+              }}
+              placeholder="Describe the work done, findings and next steps…"
+              placeholderTextColor={Muted}
+              multiline
+              maxLength={MaxSummary}
+              textAlignVertical="top"
+              editable={!submitting}
+              style={[styles.summary, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
+            />
+            <Text style={styles.counter}>
+              {summary.length}/{MaxSummary}
+            </Text>
           </View>
 
-          <Pressable onPress={submit} style={styles.submitBtn} accessibilityRole="button" accessibilityLabel="Submit">
-            {submitting ? <ActivityIndicator color={Brand.white} /> : <Text style={styles.submitText}>Submit</Text>}
-          </Pressable>
+          <View style={[styles.card, cardShadow]}>
+            <SectionTitle
+              icon="draw-pen"
+              title="Customer Signature"
+              required
+              right={
+                hasInk || signatureSaved ? (
+                  <Pressable onPress={clearSignature} disabled={submitting} hitSlop={8} style={styles.clearBtn} accessibilityRole="button">
+                    <MaterialCommunityIcons name="eraser" size={15} color={Danger} />
+                    <Text style={styles.clearText}>Clear</Text>
+                  </Pressable>
+                ) : null
+              }
+            />
+            <View>
+              <SignaturePad
+                ref={padRef}
+                style={styles.pad}
+                onInkChange={(ink) => {
+                  setHasInk(ink);
+                  setSignatureSaved(false);
+                  if (ink) setError('');
+                }}
+                onDrawStart={() => setScrollEnabled(false)}
+                onDrawEnd={() => setScrollEnabled(true)}
+              />
+              {!hasInk ? (
+                <View style={styles.padHint}>
+                  <MaterialCommunityIcons name="gesture" size={22} color={Muted} />
+                  <Text style={styles.padHintText}>Ask the customer to sign here</Text>
+                </View>
+              ) : null}
+            </View>
+            {signatureSaved ? (
+              <View style={styles.savedRow}>
+                <MaterialCommunityIcons name="check-circle" size={15} color={Success} />
+                <Text style={styles.savedText}>Signature saved</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {error ? (
+            <View style={styles.errorBox}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Danger} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
         </ScrollView>
+
+        <SafeAreaView edges={['bottom']} style={styles.footer}>
+          <Pressable
+            onPress={() => void submit()}
+            disabled={submitting}
+            style={({ pressed }) => [styles.submitBtn, submitting && { opacity: 0.7 }, pressed && { opacity: 0.9 }]}
+            accessibilityRole="button"
+          >
+            {submitting ? (
+              <ActivityIndicator color={Brand.white} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="check-circle-outline" size={19} color={Brand.white} />
+                <Text style={styles.submitText}>Submit & Complete Visit</Text>
+              </>
+            )}
+          </Pressable>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
+function SectionTitle({ icon, title, required, right }: {
+  icon: 'text-box-outline' | 'draw-pen';
+  title: string;
+  required?: boolean;
+  right?: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionRow}>
+      <MaterialCommunityIcons name={icon} size={18} color={Sky} />
+      <Text style={styles.sectionTitle}>
+        {title}
+        {required ? <Text style={{ color: Danger }}> *</Text> : null}
+      </Text>
+      {right}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Brand.white },
+  screen: { flex: 1, backgroundColor: PageBg },
   flex: { flex: 1 },
-  headerBar: { backgroundColor: HeaderBlue },
-  header: {
-    minHeight: 56,
-    paddingHorizontal: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: Brand.white,
-    fontSize: 20,
-    fontFamily: 'Poppins_500Medium',
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 32,
-  },
-  label: {
-    color: '#111111',
-    fontSize: 18,
-    fontFamily: 'Poppins_700Bold',
-    marginBottom: 8,
-  },
-  required: { color: Required },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 12 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, color: Brand.white, fontSize: 18, fontFamily: 'Poppins_600SemiBold' },
+  content: { padding: 16, paddingBottom: 24, gap: 12 },
+  card: { backgroundColor: Brand.white, borderRadius: 14, borderWidth: 1, borderColor: Line, padding: 14 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  sectionTitle: { flex: 1, color: Ink, fontSize: 15, fontFamily: 'Poppins_600SemiBold' },
   summary: {
-    minHeight: 120,
-    color: '#111111',
-    fontSize: 16,
+    minHeight: 130,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Line,
+    backgroundColor: '#F8FAFC',
+    color: Ink,
+    fontSize: 14,
+    lineHeight: 20,
     fontFamily: 'Poppins_400Regular',
-    padding: 0,
-    marginBottom: 8,
   },
-  error: {
-    marginTop: 10,
-    color: Required,
-    fontSize: 13,
-    fontFamily: 'Poppins_500Medium',
+  counter: { alignSelf: 'flex-end', marginTop: 6, color: Muted, fontSize: 11.5, fontFamily: 'Poppins_400Regular' },
+  pad: {
+    height: 190,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#C7D7EA',
+    backgroundColor: '#FBFCFE',
   },
-  saved: {
-    marginTop: 10,
-    color: '#16A34A',
-    fontSize: 13,
-    fontFamily: 'Poppins_500Medium',
+  padHint: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    pointerEvents: 'none',
   },
-  actions: {
-    marginTop: 16,
+  padHintText: { color: Muted, fontSize: 13, fontFamily: 'Poppins_500Medium' },
+  clearBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  clearText: { color: Danger, fontSize: 12.5, fontFamily: 'Poppins_600SemiBold' },
+  savedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  savedText: { color: Success, fontSize: 12.5, fontFamily: 'Poppins_600SemiBold' },
+  errorBox: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  clearBtn: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 8,
-    backgroundColor: '#F3F0EA',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#FDECEC',
   },
-  clearText: {
-    color: '#222222',
-    fontSize: 15,
-    fontFamily: 'Poppins_500Medium',
-  },
-  saveBtn: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 8,
-    backgroundColor: SaveTeal,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  saveText: {
-    color: Brand.white,
-    fontSize: 15,
-    fontFamily: 'Poppins_500Medium',
+  errorText: { flex: 1, color: '#9F1239', fontSize: 12.5, fontFamily: 'Poppins_500Medium' },
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    backgroundColor: Brand.white,
+    borderTopWidth: 1,
+    borderTopColor: Line,
   },
   submitBtn: {
-    alignSelf: 'center',
-    marginTop: 18,
-    minWidth: 168,
-    minHeight: 46,
-    borderRadius: 8,
-    backgroundColor: HeaderBlue,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 28,
+    gap: 8,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: Navy,
   },
-  submitText: {
-    color: Brand.white,
-    fontSize: 16,
-    fontFamily: 'Poppins_500Medium',
-  },
+  submitText: { color: Brand.white, fontSize: 15, fontFamily: 'Poppins_600SemiBold' },
 });

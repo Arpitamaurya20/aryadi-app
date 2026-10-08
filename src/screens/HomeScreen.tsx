@@ -52,7 +52,6 @@ type HomeScreenProps = {
   user: AuthUser;
   onLogout: () => void;
   onOpenProfile: () => void;
-  onEditProfile: () => void;
   onOpenTickets: () => void;
   onOpenSiteVisits: () => void;
   onOpenMappedAssets: () => void;
@@ -65,7 +64,6 @@ export function HomeScreen({
   user,
   onLogout,
   onOpenProfile,
-  onEditProfile,
   onOpenTickets,
   onOpenSiteVisits,
   onOpenMappedAssets,
@@ -154,7 +152,6 @@ export function HomeScreen({
           user={user}
           data={homeData}
           onOpenProfile={onOpenProfile}
-          onEditProfile={onEditProfile}
           onOpenWorkZone={onOpenWorkZone}
           onOpenSpeakUp={onOpenSpeakUp}
           onLogout={signOut}

@@ -56,30 +56,36 @@ export function BarcodeInformationScreen({ onBack }: BarcodeInformationScreenPro
           <AryadiLogo width={220} height={64} />
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Select branch"
+        <View
+          accessibilityRole="summary"
           style={[
-            styles.buttonWrap,
-            brandShadow('0 6px 12px rgba(11, 53, 110, 0.28)', {
-              shadowColor: LogoNavy,
+            styles.soonCard,
+            brandShadow('0 8px 14px rgba(10, 29, 55, 0.10)', {
+              shadowColor: Brand.navy,
               shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.28,
-              shadowRadius: 8,
+              shadowOpacity: 0.1,
+              shadowRadius: 10,
               elevation: 6,
             }),
           ]}
         >
           <LinearGradient
-            colors={[LogoNavy, '#1568B8', LogoMid]}
+            colors={[LogoNavy, LogoMid, LogoSky]}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.button}
+            end={{ x: 1, y: 1 }}
+            style={styles.soonIcon}
           >
-            <MaterialIcons name="apartment" size={20} color={Brand.white} />
-            <Text style={styles.buttonText}>SELECT BRANCH</Text>
+            <MaterialCommunityIcons name="barcode-scan" size={38} color={Brand.white} />
           </LinearGradient>
-        </Pressable>
+          <Text style={styles.soonTitle}>Coming Soon</Text>
+          <Text style={styles.soonText}>
+            Barcode scanning and asset information will be available here shortly. Stay tuned!
+          </Text>
+          <View style={styles.soonPill}>
+            <MaterialIcons name="schedule" size={14} color={LogoMid} />
+            <Text style={styles.soonPillText}>UNDER DEVELOPMENT</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -114,24 +120,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 12,
   },
-  buttonWrap: {
+  soonCard: {
     marginTop: 28,
     width: '100%',
-    borderRadius: 28,
-    overflow: 'hidden',
+    backgroundColor: Brand.white,
+    borderRadius: 18,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
   },
-  button: {
-    height: 54,
-    borderRadius: 28,
-    flexDirection: 'row',
+  soonIcon: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonText: {
-    marginLeft: 10,
-    color: Brand.white,
-    fontSize: 15,
+  soonTitle: {
+    marginTop: 18,
+    color: LogoNavy,
+    fontSize: 24,
     fontFamily: 'Poppins_600SemiBold',
-    letterSpacing: 0.4,
+  },
+  soonText: {
+    marginTop: 8,
+    color: '#5B6B82',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    fontFamily: 'Poppins_400Regular',
+  },
+  soonPill: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F2FC',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  soonPillText: {
+    marginLeft: 6,
+    color: LogoMid,
+    fontSize: 11,
+    fontFamily: 'Poppins_600SemiBold',
+    letterSpacing: 0.6,
   },
 });

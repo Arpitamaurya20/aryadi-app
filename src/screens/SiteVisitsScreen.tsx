@@ -1,11 +1,12 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { ActivityIndicator, BackHandler, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AuthUser } from '../api/auth';
 import { downloadSiteVisitPdf, fetchSiteVisits, type SiteVisit } from '../api/siteVisits';
+import { formatDisplayDate } from '../components/DateCalendarModal';
 import { readJson, writeJson } from '../storage/localStore';
 import { mySiteVisitsKey } from '../storage/mySiteVisits';
 import { Brand } from '../theme/colors';
@@ -15,25 +16,33 @@ import { ProvideDetailsScreen } from './ProvideDetailsScreen';
 import { VisitorClientDetailsScreen } from './VisitorClientDetailsScreen';
 import { VisitorSummaryScreen } from './VisitorSummaryScreen';
 
-const LogoNavy = '#0B356E';
-const LogoMid = '#1E8BE0';
-const LogoSky = '#3AABF2';
-const PageBg = '#EAF5FC';
-const IconWash = '#D7EEFB';
-const Ink = '#1F2937';
+const Navy = '#0B356E';
+const Sky = '#1E8BE0';
+const PageBg = '#F4F6FA';
+const Ink = '#0F172A';
 const Slate = '#64748B';
-const Line = '#E6ECF4';
-const Red = '#DC2626';
-const PdfRed = '#E11D48';
-const Green = '#16A34A';
+const Muted = '#94A3B8';
+const Line = '#E5E9F0';
+const Danger = '#DC2626';
+const Success = '#059669';
+const Violet = '#7C3AED';
+
+type McIcon = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /** Every visit shares one CreatedBy on the server, so status refresh scans this many recent rows. */
 const StatusSyncWindow = 50;
 
+const cardShadow = brandShadow('0 2px 8px rgba(15, 23, 42, 0.05)', {
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 6,
+  elevation: 1,
+});
+
 function siteVisitCreatedBy(_user: AuthUser) {
   return 'D@007';
 }
-
 
 function isVisitComplete(status: string) {
   return status.toLowerCase().includes('complete');
@@ -43,12 +52,23 @@ function isObservationRecorded(status: string) {
   return status.toLowerCase().includes('observation');
 }
 
-function statusDotColor(status: string) {
-  if (isVisitComplete(status)) return Green;
-  if (isObservationRecorded(status)) return '#7C3AED';
+function statusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized.includes('reject') || normalized.includes('cancel')) return Red;
-  return '#334155';
+  if (isVisitComplete(status)) return { label: 'Completed', color: Success, tint: '#E7F6EF' };
+  if (isObservationRecorded(status)) return { label: 'Observation', color: Violet, tint: '#F2ECFE' };
+  if (normalized.includes('reject') || normalized.includes('cancel')) return { label: status, color: Danger, tint: '#FDECEC' };
+  return { label: status || 'Started', color: Sky, tint: '#EAF3FC' };
+}
+
+function formatTime(value: string) {
+  const [h, m] = value.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return value;
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+function visitWhen(visit: SiteVisit) {
+  const date = formatDisplayDate(visit.createdDate) || visit.createdDate;
+  return [date, visit.createdTime ? formatTime(visit.createdTime) : ''].filter(Boolean).join(', ');
 }
 
 type SiteVisitsScreenProps = {
@@ -71,9 +91,6 @@ export function SiteVisitsScreen({ user, onBack }: SiteVisitsScreenProps) {
   const visitsRef = useRef<SiteVisit[]>([]);
   const hydrated = useRef(false);
   const storeKey = mySiteVisitsKey(user);
-
-  const ownerName = (user.loginName || user.username || 'User').toUpperCase();
-  const ownerInitial = ownerName.charAt(0) || 'U';
 
   const commit = useCallback(
     (next: SiteVisit[]) => {
@@ -233,139 +250,53 @@ export function SiteVisitsScreen({ user, onBack }: SiteVisitsScreenProps) {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-      <LinearGradient colors={[LogoNavy, LogoMid, LogoSky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+      <LinearGradient colors={[Navy, Sky]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         <SafeAreaView edges={['top']}>
           <View style={styles.header}>
-            <Pressable onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
-              <MaterialCommunityIcons name="arrow-left" size={22} color={Brand.white} />
+            <Pressable onPress={onBack} style={styles.backBtn} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
+              <Ionicons name="arrow-back" size={22} color={Brand.white} />
             </Pressable>
             <Text style={styles.headerTitle}>Site Visits</Text>
+            {loading && visits.length > 0 ? <ActivityIndicator size="small" color={Brand.white} /> : null}
           </View>
         </SafeAreaView>
       </LinearGradient>
 
       {loading && visits.length === 0 ? (
         <View style={styles.empty}>
-          <ActivityIndicator color={LogoMid} />
+          <ActivityIndicator color={Sky} />
         </View>
       ) : error && visits.length === 0 ? (
         <View style={styles.empty}>
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name="cloud-alert-outline" size={38} color={LogoMid} />
-          </View>
-          <Text style={styles.title}>Unable to load visits</Text>
-          <Text style={styles.subtitle}>{error}</Text>
-          <Pressable onPress={loadVisits} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Try again">
+          <MaterialCommunityIcons name="cloud-alert-outline" size={40} color={Muted} />
+          <Text style={styles.emptyTitle}>Unable to load visits</Text>
+          <Text style={styles.emptyText}>{error}</Text>
+          <Pressable onPress={loadVisits} style={styles.retryBtn} accessibilityRole="button">
             <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         </View>
       ) : visits.length === 0 ? (
         <View style={styles.empty}>
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name="file-document-outline" size={38} color={LogoMid} />
-          </View>
-          <Text style={styles.title}>No Site Visits Found</Text>
-          <Text style={styles.subtitle}>Tap the + button to create a new visit{'\n'}record.</Text>
+          <MaterialCommunityIcons name="map-marker-outline" size={40} color={Muted} />
+          <Text style={styles.emptyTitle}>No site visits yet</Text>
+          <Text style={styles.emptyText}>Tap + to start a new visit.</Text>
         </View>
       ) : (
-        <ScrollView style={styles.listScroll} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {error ? <Text style={styles.listError}>{error}</Text> : null}
-          {visits.map((visit) => {
-            const finished = isVisitComplete(visit.status);
-            const observed = isObservationRecorded(visit.status);
-            return (
-              <View
-                key={visit.id}
-                style={[
-                  styles.card,
-                  brandShadow('0 6px 14px rgba(11, 53, 110, 0.07)', {
-                    shadowColor: LogoNavy,
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.07,
-                    shadowRadius: 10,
-                    elevation: 2,
-                  }),
-                ]}
-              >
-                <View style={styles.cardTop}>
-                  <View style={styles.ticketBadge}>
-                    <MaterialCommunityIcons name="ticket-confirmation-outline" size={18} color={LogoMid} />
-                  </View>
-                  {visit.createdDate ? (
-                    <View style={styles.dateRow}>
-                      <MaterialCommunityIcons name="clock-outline" size={15} color={Red} />
-                      <Text style={styles.dateText}>
-                        {visit.createdDate}
-                        {visit.createdTime ? ` • ${visit.createdTime}` : ''}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={styles.dashClip}>
-                  <View style={styles.dash} />
-                </View>
-
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {visit.title}
-                </Text>
-
-                <View style={styles.ownerRow}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{ownerInitial}</Text>
-                  </View>
-                  <Text style={styles.ownerName} numberOfLines={1}>
-                    {ownerName}
-                  </Text>
-                </View>
-
-                <View style={styles.cardBottom}>
-                  <View style={styles.statusPill} accessibilityLabel={`Status ${visit.status}`}>
-                    <View style={[styles.statusDot, { backgroundColor: statusDotColor(visit.status) }]} />
-                    <Text style={styles.statusText} numberOfLines={1}>
-                      {visit.status}
-                    </Text>
-                  </View>
-
-                  <View style={styles.actions}>
-                    <Pressable
-                      onPress={() => void openPdf(visit)}
-                      hitSlop={6}
-                      style={styles.pdfBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="Open report PDF"
-                    >
-                      {pdfVisitId === visit.id ? (
-                        <ActivityIndicator color={PdfRed} size="small" />
-                      ) : (
-                        <MaterialCommunityIcons name="file-document-outline" size={28} color={PdfRed} />
-                      )}
-                    </Pressable>
-                    {finished ? null : (
-                      <Pressable
-                        onPress={() => setObservationVisit(visit)}
-                        style={[styles.roundBtn, { backgroundColor: Red }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Add observation"
-                      >
-                        <MaterialCommunityIcons name="plus" size={20} color={Brand.white} />
-                      </Pressable>
-                    )}
-                    {observed ? (
-                      <Pressable
-                        onPress={() => setSummaryVisit(visit)}
-                        style={[styles.roundBtn, { backgroundColor: Green }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Fill visitor summary"
-                      >
-                        <MaterialCommunityIcons name="check" size={20} color={Brand.white} />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </View>
-              </View>
-            );
-          })}
+          <Text style={styles.listCount}>
+            {visits.length} {visits.length === 1 ? 'visit' : 'visits'}
+          </Text>
+          {visits.map((visit) => (
+            <VisitCard
+              key={visit.id}
+              visit={visit}
+              pdfLoading={pdfVisitId === visit.id}
+              onPdf={() => void openPdf(visit)}
+              onObservation={() => setObservationVisit(visit)}
+              onSummary={() => setSummaryVisit(visit)}
+            />
+          ))}
         </ScrollView>
       )}
 
@@ -374,245 +305,150 @@ export function SiteVisitsScreen({ user, onBack }: SiteVisitsScreenProps) {
           onPress={() => setShowProvideDetails(true)}
           accessibilityRole="button"
           accessibilityLabel="Add site visit"
-          style={[
+          style={({ pressed }) => [
             styles.fab,
-            brandShadow('0 8px 12px rgba(11, 53, 110, 0.28)', {
-              shadowColor: LogoNavy,
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.28,
+            brandShadow('0 6px 14px rgba(11, 53, 110, 0.25)', {
+              shadowColor: Navy,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
               shadowRadius: 8,
-              elevation: 8,
+              elevation: 6,
             }),
+            pressed && { opacity: 0.9 },
           ]}
         >
-          <LinearGradient colors={[LogoNavy, LogoMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fabFill}>
-            <MaterialCommunityIcons name="plus" size={28} color={Brand.white} />
-          </LinearGradient>
+          <MaterialCommunityIcons name="plus" size={28} color={Brand.white} />
         </Pressable>
       </SafeAreaView>
     </View>
   );
 }
 
+function VisitCard({ visit, pdfLoading, onPdf, onObservation, onSummary }: {
+  visit: SiteVisit;
+  pdfLoading: boolean;
+  onPdf: () => void;
+  onObservation: () => void;
+  onSummary: () => void;
+}) {
+  const finished = isVisitComplete(visit.status);
+  const observed = isObservationRecorded(visit.status);
+  const tone = statusTone(visit.status);
+  const place = [visit.company, visit.branch].filter(Boolean).join(' · ');
+
+  return (
+    <View style={[styles.card, cardShadow]}>
+      <View style={styles.cardTop}>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {visit.title || 'Site visit'}
+        </Text>
+        <View style={[styles.status, { backgroundColor: tone.tint }]}>
+          <Text style={[styles.statusText, { color: tone.color }]} numberOfLines={1}>
+            {tone.label}
+          </Text>
+        </View>
+      </View>
+
+      {visit.createdDate ? <InfoRow icon="calendar-blank-outline" text={visitWhen(visit)} /> : null}
+      {place ? <InfoRow icon="office-building-outline" text={place} /> : null}
+      {visit.contactPerson ? <InfoRow icon="account-outline" text={visit.contactPerson} /> : null}
+
+      <View style={styles.actions}>
+        <ActionLink
+          icon="file-pdf-box"
+          label="Report"
+          color={Slate}
+          loading={pdfLoading}
+          onPress={onPdf}
+        />
+        {!finished ? <ActionLink icon="plus" label="Observation" color={Sky} onPress={onObservation} /> : null}
+        {!finished && observed ? <ActionLink icon="check" label="Complete" color={Success} onPress={onSummary} /> : null}
+      </View>
+    </View>
+  );
+}
+
+function InfoRow({ icon, text }: { icon: McIcon; text: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <MaterialCommunityIcons name={icon} size={15} color={Muted} />
+      <Text style={styles.infoText} numberOfLines={1}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+function ActionLink({ icon, label, color, loading, onPress }: {
+  icon: McIcon;
+  label: string;
+  color: string;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [styles.action, { borderColor: `${color}40` }, pressed && { backgroundColor: `${color}12` }]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {loading ? <ActivityIndicator size="small" color={color} /> : <MaterialCommunityIcons name={icon} size={16} color={color} />}
+      <Text style={[styles.actionText, { color }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: PageBg,
-  },
-  header: {
-    paddingHorizontal: 6,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: Brand.white,
-    fontSize: 18,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  empty: {
-    flex: 1,
-    paddingHorizontal: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconCircle: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    backgroundColor: IconWash,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    marginTop: 22,
-    color: LogoNavy,
-    fontSize: 20,
-    fontFamily: 'Poppins_700Bold',
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: 8,
-    color: Brand.placeholder,
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: 'Poppins_400Regular',
-    textAlign: 'center',
-  },
-  retryBtn: {
-    marginTop: 18,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 22,
-    backgroundColor: LogoMid,
-  },
-  retryText: {
-    color: Brand.white,
-    fontSize: 14,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  listScroll: {
-    flex: 1,
-  },
-  list: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 96,
-  },
-  listError: {
-    marginBottom: 10,
-    color: PdfRed,
-    fontSize: 12,
-    fontFamily: 'Poppins_500Medium',
-  },
-  card: {
-    backgroundColor: Brand.white,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Line,
-    borderLeftWidth: 4,
-    borderLeftColor: LogoMid,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 14,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  ticketBadge: {
-    width: 46,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: '#E3F1FC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexShrink: 1,
-    marginLeft: 12,
-  },
-  dateText: {
-    color: Slate,
-    fontSize: 12.5,
-    fontFamily: 'Poppins_500Medium',
-  },
-  dashClip: {
-    height: 1,
-    overflow: 'hidden',
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  dash: {
-    height: 2,
-    borderWidth: 1,
-    borderColor: '#D5DEE9',
-    borderStyle: 'dashed',
-  },
-  cardTitle: {
-    color: Ink,
-    fontSize: 17,
-    lineHeight: 24,
-    fontFamily: 'Poppins_700Bold',
-  },
-  ownerRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  avatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: LogoMid,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: Brand.white,
-    fontSize: 13,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  ownerName: {
-    flex: 1,
-    color: Ink,
-    fontSize: 14,
-    fontFamily: 'Poppins_700Bold',
-  },
-  cardBottom: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    maxWidth: '55%',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#EEF2F7',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    flexShrink: 1,
-    color: '#334155',
-    fontSize: 13,
-    fontFamily: 'Poppins_600SemiBold',
-  },
+  screen: { flex: 1, backgroundColor: PageBg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 12 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, color: Brand.white, fontSize: 18, fontFamily: 'Poppins_600SemiBold' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 40 },
+  emptyTitle: { marginTop: 8, color: Ink, fontSize: 16, fontFamily: 'Poppins_600SemiBold', textAlign: 'center' },
+  emptyText: { color: Slate, fontSize: 13, fontFamily: 'Poppins_400Regular', textAlign: 'center' },
+  retryBtn: { marginTop: 12, paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10, backgroundColor: Sky },
+  retryText: { color: Brand.white, fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
+  list: { padding: 16, paddingBottom: 100, gap: 12 },
+  listError: { color: Danger, fontSize: 12, fontFamily: 'Poppins_500Medium' },
+  listCount: { color: Slate, fontSize: 12.5, fontFamily: 'Poppins_500Medium' },
+  card: { backgroundColor: Brand.white, borderRadius: 14, borderWidth: 1, borderColor: Line, padding: 14 },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  cardTitle: { flex: 1, color: Ink, fontSize: 15, lineHeight: 21, fontFamily: 'Poppins_600SemiBold', textTransform: 'capitalize' },
+  status: { maxWidth: '45%', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusText: { fontSize: 11, fontFamily: 'Poppins_600SemiBold' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  infoText: { flex: 1, color: Slate, fontSize: 12.5, fontFamily: 'Poppins_400Regular' },
   actions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF1F5',
   },
-  pdfBtn: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roundBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabBar: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    alignItems: 'flex-end',
-    paddingRight: 22,
-    paddingBottom: 12,
-  },
-  fab: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    overflow: 'hidden',
-  },
-  fabFill: {
+  action: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+    height: 36,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  actionText: { flexShrink: 1, fontSize: 12.5, fontFamily: 'Poppins_600SemiBold' },
+  fabBar: { position: 'absolute', right: 0, bottom: 0, paddingRight: 20, paddingBottom: 16 },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Navy,
   },
 });
