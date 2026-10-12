@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -38,8 +38,17 @@ export function LoginScreen({ onLogin, initialUsername = '' }: LoginScreenProps)
     return 148;
   }, [width]);
 
-  const brandGap = height < 700 ? 28 : 36;
+  const brandGap = height < 700 ? 20 : 28;
   const side = width < 360 ? 16 : 20;
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const previous = document.title;
+    document.title = 'Sign in · Aryadi Business';
+    return () => {
+      document.title = previous;
+    };
+  }, []);
 
   async function handleLogin() {
     if (loading) return;
@@ -71,7 +80,11 @@ export function LoginScreen({ onLogin, initialUsername = '' }: LoginScreenProps)
           >
             <AryadiLogo width={logoWidth} height={logoWidth} />
 
-            <View style={[styles.card, { marginTop: brandGap }]}>
+            <Text accessibilityRole="header" style={[styles.pageTitle, { marginTop: brandGap }]}>
+              Sign in
+            </Text>
+
+            <View style={styles.card}>
               <LoginField
                 value={username}
                 onChangeText={(value) => {
@@ -148,9 +161,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingBottom: 24,
   },
+  pageTitle: {
+    color: Brand.navy,
+    fontSize: 22,
+    lineHeight: 28,
+    fontFamily: 'Poppins_600SemiBold',
+    textAlign: 'center',
+  },
   card: {
     width: '92%',
     maxWidth: 400,
+    marginTop: 16,
     backgroundColor: Brand.white,
     borderRadius: 20,
     borderWidth: 1,

@@ -8,7 +8,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { login, logout, type AuthUser } from './src/api/auth';
 import { loadRememberedUsername, loadSession, saveSession } from './src/api/session';
@@ -35,6 +35,14 @@ import { EmployeeKpiScreen } from './src/screens/EmployeeKpiScreen';
 import { WorkZoneScreen } from './src/screens/WorkZoneScreen';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+const LOGIN_PATH = '/loginScreen';
+
+function replaceWebPath(pathname: string) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  if (window.location.pathname === pathname) return;
+  window.history.replaceState(window.history.state, '', `${pathname}${window.location.search}${window.location.hash}`);
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -85,6 +93,17 @@ export default function App() {
     const timer = setTimeout(() => setShowSplash(false), 1800);
     return () => clearTimeout(timer);
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    if (!fontsLoaded || showSplash) return;
+    if (!user) {
+      replaceWebPath(LOGIN_PATH);
+      return;
+    }
+    if (typeof window !== 'undefined' && window.location.pathname === LOGIN_PATH) {
+      replaceWebPath('/');
+    }
+  }, [fontsLoaded, showSplash, user]);
 
   return (
     <SafeAreaProvider>
