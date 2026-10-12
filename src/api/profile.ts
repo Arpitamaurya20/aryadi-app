@@ -155,7 +155,7 @@ export async function fetchEmployeeProfile(user: AuthUser): Promise<AuthUser> {
 /**
  * Updates employee profile via update_tx_customer_details.php
  * Payload matches live TechXpert API:
- * https://techxpertindia.in/api/update_tx_customer_details.php
+ * https://aryadibusiness.com/api/update_tx_customer_details.php
  */
 export async function updateEmployeeProfile(
   user: AuthUser,

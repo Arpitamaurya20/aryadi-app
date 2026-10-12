@@ -9,10 +9,10 @@ import { Platform } from 'react-native';
  */
 export type ApiEnv = 'local' | 'live';
 
-export const API_ENV: ApiEnv = 'local';
+export const API_ENV: ApiEnv = 'live';
 
 /** Production base URL (no trailing slash). Update path only if live API moves. */
-const LIVE_API_BASE = 'https://techxpertindia.in/api';
+const LIVE_API_BASE = 'https://aryadibusiness.com/api';
 
 /**
  * Local PHP base path (no host, no trailing slash).
