@@ -152,13 +152,13 @@ export function AnimatedWorkIcon({ kind, delay = 0 }: { kind: WorkKind; delay?: 
           toValue: 1,
           duration: 900,
           delay,
-          easing: Easing.inOut(Easing.sin),
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(motion, {
           toValue: 0,
           duration: 900,
-          easing: Easing.inOut(Easing.sin),
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
       ])

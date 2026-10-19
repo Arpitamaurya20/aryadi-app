@@ -176,10 +176,10 @@ export async function login(username: string, password: string): Promise<AuthUse
   const baseUser: AuthUser = {
     id: data.UserID ?? 0,
     employeeId,
-    username: data.UserName || username.trim(),
-    loginName: data.UserName || username.trim(),
-    user_type: roleLabel,
-    accountType: data.UserType || 'Employee',
+    username: String(data.UserName || username.trim()),
+    loginName: String(data.UserName || username.trim()),
+    user_type: String(roleLabel),
+    accountType: String(data.UserType || 'Employee'),
     email: null,
     phone: null,
     employee_code: employeeId > 0 ? String(employeeId) : null,
@@ -207,11 +207,11 @@ export async function login(username: string, password: string): Promise<AuthUse
     signedIn = baseUser;
   }
 
-  rememberUsername(username.trim());
-  saveSession(signedIn);
+  await rememberUsername(username.trim());
+  await saveSession(signedIn);
   return signedIn;
 }
 
-export function logout() {
-  clearSession();
+export async function logout() {
+  await clearSession();
 }

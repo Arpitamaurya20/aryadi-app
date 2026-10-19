@@ -69,11 +69,9 @@ export function LoginScreen({ onLogin, initialUsername = '' }: LoginScreenProps)
       <BottomBrandWaves height={150} />
 
       <SafeAreaView style={styles.safe}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <KeyboardAvoidingView style={styles.flex} behavior={undefined}>
           <ScrollView
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
             contentContainerStyle={[styles.content, { paddingHorizontal: side }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}

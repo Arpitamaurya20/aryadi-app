@@ -144,6 +144,7 @@ export function useHomeData(user: AuthUser, attendance: AttendanceStatus | null)
       if (mode === 'refresh') setRefreshing(true);
       else setLoading(true);
       setError('');
+      try {
       const today = localDay(new Date());
       const [tickets, ppm, visits] = await Promise.allSettled([
         fetchOpenServiceTickets(user.employeeId),
@@ -189,7 +190,7 @@ export function useHomeData(user: AuthUser, attendance: AttendanceStatus | null)
       }
       if (visits.status === 'fulfilled') {
         for (const visit of visits.value) {
-          if (visit.status.toLowerCase().includes('complete')) continue;
+          if (String(visit.status || '').toLowerCase().includes('complete')) continue;
           next.push({
             key: `visit:${visit.id}`,
             kind: 'visit',
@@ -220,6 +221,11 @@ export function useHomeData(user: AuthUser, attendance: AttendanceStatus | null)
       }
       setLoading(false);
       setRefreshing(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load your tasks.');
+        setLoading(false);
+        setRefreshing(false);
+      }
     },
     [user],
   );

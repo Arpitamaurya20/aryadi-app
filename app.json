@@ -2,12 +2,13 @@
   "expo": {
     "name": "ABW",
     "slug": "aryadi-app",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/logo-square.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aryadibusiness.admin.test"
     },
     "android": {
       "package": "com.aryadibusiness.admin.test",
@@ -31,7 +32,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/logo.png",
+          "image": "./assets/images/logo.png",
           "imageWidth": 180,
           "resizeMode": "contain"
         }

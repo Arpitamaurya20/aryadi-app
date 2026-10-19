@@ -66,7 +66,12 @@ export function LoginField({
           onSubmitEditing={onSubmitEditing}
           underlineColorAndroid="transparent"
           accessibilityLabel={placeholder}
-          style={[styles.input, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
+          scrollEnabled={Platform.OS !== 'ios'}
+          style={[
+            styles.input,
+            Platform.OS === 'ios' ? styles.inputIos : null,
+            Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null,
+          ]}
         />
       </View>
       {isPassword ? (
@@ -116,6 +121,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     paddingVertical: 0,
     paddingHorizontal: 0,
+  },
+  inputIos: {
+    height: 22,
+    lineHeight: 22,
   },
   eye: {
     width: 36,

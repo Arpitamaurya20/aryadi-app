@@ -33,13 +33,13 @@ export function IndustrialIconBadge({ kind, delay = 0 }: { kind: IndustrialModul
           toValue: 1,
           duration: 1100,
           delay,
-          easing: Easing.inOut(Easing.sin),
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(motion, {
           toValue: 0,
           duration: 1100,
-          easing: Easing.inOut(Easing.sin),
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
       ])

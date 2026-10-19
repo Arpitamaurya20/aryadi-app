@@ -99,8 +99,8 @@ export function HomeScreen({
     lastSelectedTab = DashboardTab;
     onLogout();
   };
-  const displayName = user.username || 'Technician';
-  const role = user.user_type || user.accountType || 'Employee';
+  const displayName = String(user.username || 'Technician');
+  const role = String(user.user_type || user.accountType || 'Employee');
   const employeeLabel = user.employee_code
     ? user.employee_code
     : user.employeeId > 0

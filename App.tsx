@@ -13,6 +13,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { login, logout, type AuthUser } from './src/api/auth';
 import { loadRememberedUsername, loadSession, saveSession } from './src/api/session';
 import { PunchReminderModal } from './src/components/PunchReminderModal';
+import { ScreenErrorBoundary } from './src/components/ScreenErrorBoundary';
 import { usePunchReminder } from './src/hooks/usePunchReminder';
 import { BarcodeInformationScreen } from './src/screens/BarcodeInformationScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
@@ -38,21 +39,30 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const LOGIN_PATH = '/loginScreen';
 
+function webPathname() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.location) return null;
+  return window.location.pathname;
+}
+
 function replaceWebPath(pathname: string) {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-  if (window.location.pathname === pathname) return;
+  const current = webPathname();
+  if (current == null || current === pathname) return;
   window.history.replaceState(window.history.state, '', `${pathname}${window.location.search}${window.location.hash}`);
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
+  const [fontWaitExpired, setFontWaitExpired] = useState(false);
+  const fontsReady = fontsLoaded || fontError != null || fontWaitExpired;
   const [showSplash, setShowSplash] = useState(true);
-  const [user, setUser] = useState<AuthUser | null>(() => loadSession());
+  const [sessionReady, setSessionReady] = useState(false);
+  const [initialUsername, setInitialUsername] = useState('');
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
@@ -83,33 +93,54 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user?.token) saveSession(user);
+    const timer = setTimeout(() => setFontWaitExpired(true), 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([loadSession(), loadRememberedUsername()])
+      .then(([saved, name]) => {
+        if (!active) return;
+        if (saved) setUser(saved);
+        setInitialUsername(name);
+      })
+      .finally(() => {
+        if (active) setSessionReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (user?.token) void saveSession(user);
   }, [user]);
 
   useEffect(() => {
-    if (!fontsLoaded) return;
+    if (!fontsReady || !sessionReady) return;
 
     SplashScreen.hideAsync().catch(() => undefined);
     const timer = setTimeout(() => setShowSplash(false), 1800);
     return () => clearTimeout(timer);
-  }, [fontsLoaded]);
+  }, [fontsReady, sessionReady]);
 
   useEffect(() => {
-    if (!fontsLoaded || showSplash) return;
+    if (!fontsReady || !sessionReady || showSplash) return;
     if (!user) {
       replaceWebPath(LOGIN_PATH);
       return;
     }
-    if (typeof window !== 'undefined' && window.location.pathname === LOGIN_PATH) {
+    if (webPathname() === LOGIN_PATH) {
       replaceWebPath('/');
     }
-  }, [fontsLoaded, showSplash, user]);
+  }, [fontsReady, sessionReady, showSplash, user]);
 
   return (
     <SafeAreaProvider>
       <View style={styles.root}>
         <StatusBar style="dark" />
-        {!fontsLoaded || showSplash ? (
+        {!fontsReady || !sessionReady || showSplash ? (
           <BrandSplash />
         ) : user && showEditProfile ? (
           <EditProfileScreen
@@ -184,10 +215,11 @@ export default function App() {
         ) : user && showVendors ? (
           <VendorRegistrationScreen user={user} onBack={() => setShowVendors(false)} />
         ) : user ? (
+          <ScreenErrorBoundary title="Home couldn't open">
           <HomeScreen
             user={user}
             onLogout={() => {
-              logout();
+              void logout();
               setShowEditProfile(false);
               setShowMyProfile(false);
               setShowTickets(false);
@@ -214,13 +246,14 @@ export default function App() {
             onOpenSpeakUp={() => setShowSpeakUp(true)}
             onOpenVendors={() => setShowVendors(true)}
           />
+          </ScreenErrorBoundary>
         ) : (
           <LoginScreen
-            initialUsername={loadRememberedUsername()}
+            initialUsername={initialUsername}
             onLogin={async (username, password) => setUser(await login(username, password))}
           />
         )}
-        {user && fontsLoaded && !showSplash ? (
+        {user && fontsReady && sessionReady && !showSplash ? (
           <PunchReminderModal time={punchReminder.ringingTime} onPunchIn={openAttendanceFromReminder} onDismiss={punchReminder.dismiss} />
         ) : null}
       </View>
